@@ -1,0 +1,157 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#152019"><meta name="description" content="前段时间一直在忙项目工程，触觉论文的分享暂时搁置了一阵。今天看到一篇角度很有意思的新工作：它不再试图直接对齐不同触觉传感器的原始信号，而是把人类与机器人触觉统一到“接触事件”的语义层面，因此想和大家分享一下。"><link rel="canonical" href="https://mistephan.github.io/articles/tacross-human-touch-system/"><link rel="stylesheet" href="/assets/blog.css"><link rel="icon" type="image/png" href="/favicon.png"><title>11 美元的触觉手套，能把人类的“手感”迁移给机器人吗？ | 范硕</title></head><body><header class="site-header"><div class="wrap"><a class="brand" href="/">范硕 <small>VISION × TOUCH NOTES</small></a><nav class="header-links" aria-label="主导航"><a href="/">研究文章</a><a class="work-link" href="/robotics/">工作介绍 ↗</a></nav></div></header><main><section class="article-hero"><div class="wrap"><a class="back-link" href="/">← 返回全部文章</a><div class="eyebrow">RESEARCH NOTES / 触觉表征</div><h1>11 美元的触觉手套，能把人类的“手感”迁移给机器人吗？</h1><div class="meta"><time datetime="2026-10-13">2026-10-13</time><span>触觉表征</span></div></div></section><section class="article-shell"><div class="article-layout"><article class="article-body"><p>前段时间一直在忙项目工程，触觉论文的分享暂时搁置了一阵。今天看到一篇角度很有意思的新工作：它不再试图直接对齐不同触觉传感器的原始信号，而是把人类与机器人触觉统一到“接触事件”的语义层面，因此想和大家分享一下。</p>
+<h2>TACROSS：不对齐传感器数值，而是对齐“接触事件”</h2>
+<p><strong>论文</strong>：TACROSS: An Efficient and Low-Cost Scalable Human Touch System Across Heterogeneous Tactile Sensors for Dexterous Robot Learning<br><strong>作者</strong>：Bo Chen、Huanzhang Hu、Junyang Ma、Bo Yue、Fangdi Yu、Haijier Chen、Xianxin Lai、Shuyu Pan、Zhen Yang、Xiaoquan Sun、Wenze Cui、Zhongliang Jiang、Shaopeng Liu、Jiayu Chen<br><strong>机构</strong>：香港大学、香港中文大学（深圳）、中国海洋大学、武汉大学、武汉纺织大学、INFIFORCE<br><strong>状态</strong>：<a href="https://arxiv.org/abs/2610.11945">arXiv:2610.11945</a>，v1 提交于 2026 年 10 月 8 日</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1791895660/haptic/tacross-human-touch-system_20261013/tacross_fig1_overview.png" alt="TACROSS 系统总览：数据、方法、结果与四项任务"></p>
+<p>触觉机器人学习长期卡在一个很现实的矛盾上：机器人上的触觉数据最有用，却也最贵、最慢。每一分钟示范都要占用机械臂、灵巧手、触觉传感器和操作员；人类戴手套采集则便宜得多，但手套和机器人手上的传感器通常不是同一种东西，读数无法直接比较。</p>
+<p>TACROSS 的关键判断是：<strong>不要强迫异构传感器在原始通道上说同一种语言，而要把它们都翻译成“发生了什么接触事件”。</strong></p>
+<p>这使它不只是一只低成本手套，也不只是一种触觉表征。它是一个从数据采集、跨传感器触觉对齐，到机器人策略训练的完整系统。</p>
+<h2>两个鸿沟：传感器不同，动作也不同</h2>
+<p>论文把人类示范迁移到机器人拆成两个问题。</p>
+<p>第一个是 <strong>Sensing Gap（感知鸿沟）</strong>。人类手套采用压阻式材料，机器人 Revo2 手使用电容式触觉；二者在传感原理、传感器布局、空间分辨率、噪声、漂移、迟滞和动态响应上都不同。相同数值不代表相同接触，同一次物理接触也不会激活相同数量或位置的通道。因此，逐通道回归本身就是病态问题。</p>
+<p>第二个是 <strong>Action Gap（动作鸿沟）</strong>。即使人手姿态可以重定向到机器人，人类关节运动也不是机器人真正执行过的动作。把重定向结果直接当作真值，会把形态差异和估计误差写进策略。</p>
+<p>TACROSS 的答案也分成两层：感知侧对齐接触语义，动作侧只把机器人真实执行的动作视为真值。人类动作只提供带置信度、带有效性掩码的辅助监督。</p>
+<h2>一只 10.86 美元、285 个感知点的手套</h2>
+<p>硬件由五层构成：上下织物封装、两层铜镍电极，以及中间的压敏织物。手掌使用 12×15 阵列，五根手指各有 3×7 阵列，总计 285 个物理感知位置，覆盖约 200 cm²、超过手部面积的 85%。</p>
+<p>论文报告的关键指标包括：</p>
+<ul>
+<li>单只手套 BOM 为 10.86 美元，折合每个感知位置约 0.038 美元；</li>
+<li>以约 150 Hz 输出 256 个数值；</li>
+<li>单个触觉单元感知范围为 0–20 N；</li>
+<li>加载状态重复性误差为满量程的 1.38%；</li>
+<li>非线性为 8.26% F.S.，迟滞为 11.65% F.S.；</li>
+<li>手套质量低于 50 g，完整系统低于 85 g，穿戴时间小于 30 秒。</li>
+</ul>
+<p>这些数字说明它更像“可规模化采集设备”，而不是高精度测力仪。论文也很克制地把触觉强度定义成相对强度，把滑移相关量称为 instability proxy，而不是直接声称得到了精确绝对力或真实滑移标签。</p>
+<h2>数据到底如何采：两条彼此独立的链路</h2>
+<p>TACROSS 并不是让人类一直戴着压阻手套遥操作机器人。它分别采集少量、昂贵的机器人示范和大量、便宜的人类示范，再在训练阶段把两者结合起来。</p>
+<h3>机器人示范：为动作空间提供真值锚点</h3>
+<p>机器人数据来自常规遥操作系统。操作者控制 7 自由度机械臂和带电容触觉的 Revo2 灵巧手，系统同步记录：</p>
+<ul>
+<li>机器人相机图像；</li>
+<li>机械臂和灵巧手的本体状态；</li>
+<li>Revo2 电容触觉；</li>
+<li>实际发送或执行的机器人动作；</li>
+<li>各模态的原始时间戳。</li>
+</ul>
+<p>论文没有说明机器人遥操作阶段必须使用 TACROSS 压阻手套。此处真正重要的是，机器人数据包含完整的可执行动作真值。六自由度灵巧手模式下，动作可以写成</p>
+<p>$$
+a^{(13)}=[a_{\mathrm{arm}}^{7D},h_{\mathrm{hand}}^{6D}],
+$$</p>
+<p>其中前七维控制机械臂，后六维控制 Revo2 灵巧手。这批数据采集慢、占用机器人，却同时提供了机器人电容触觉与完整动作标签，是人类数据无法替代的锚点。</p>
+<h3>人类示范：直接操作物体，不再控制机器人</h3>
+<p>另一条链路中，人类戴着 TACROSS 压阻触觉手套，直接在桌面上完成挤压、倒液体、移液和抓水果等真实操作，机器人不参与。系统记录：</p>
+<ul>
+<li>第一视角 RGB；</li>
+<li>人手姿态；</li>
+<li>五指和手掌的压阻触觉；</li>
+<li>传感器有效性掩码；</li>
+<li>可选的机器人手重定向伪目标；</li>
+<li>各模态时间戳。</li>
+</ul>
+<p>Ego-R 使用 Rokoko 动捕手套获取手部运动，Ego-V 则用 RealSense D435i 和视觉逆运动学。RGB 与手部姿态约为 30 Hz，触觉约为 150 Hz。同步时，系统在每个参考时刻选择时间戳不晚于当前时刻的最新样本，避免使用未来信息。</p>
+<p>这条链路没有与机器人本体一致的机械臂动作。它提供的是大量人类接触过程，以及相对不可靠的“机器人手应该如何开合”伪目标。因此，人类数据主要用于触觉表征学习和手部辅助监督，不能独立教会 ACT 完整的机械臂轨迹。</p>
+<h3>手部姿态几何重定向如何实现？</h3>
+<p>论文使用 HaMeR 从单目 RGB 恢复符合 MANO 手模型约束的三维手部网格，并从中取得 21 个三维关键点。HaMeR 与 MediaPipe Hands 的目标相似，都会输出 21 个手部标志点；区别在于 MediaPipe 更偏向轻量、实时的关键点跟踪，而 HaMeR 会显式重建参数化三维手形与姿态，更适合后续几何重定向。</p>
+<p>TACROSS 先把关键点转换到以手腕为原点的手掌坐标系，再按手掌宽度归一化，计算各指屈曲、拇指外展和对掌关系，最后根据用户张手/握拳标定和机器人安全行程映射到 Revo2 的六个主动关节。低通滤波、单周期变化限制和关节限位用于减少不稳定跳变；姿态无效时，对应伪标签会被屏蔽。</p>
+<p>所以，两种数据的分工可以概括为：</p>
+<pre><code class="language-text">少量机器人遥操作数据
+= 机器人视觉 + 机器人状态 + 电容触觉 + 完整真实动作
+
+大量无机器人参与的人类数据
+= 第一视角视觉 + 人手姿态 + 压阻触觉 + 置信度加权的手部伪动作
+</code></pre>
+<h2>方法核心：把触觉变成跨设备可比较的事件</h2>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1791895661/haptic/tacross-human-touch-system_20261013/tacross_fig4_alignment_method.png" alt="TACROSS 的接触语义规范化、双分支编码和机器人监督 ACT"></p>
+<h3>1. 先规范化为接触语义</h3>
+<p>人类手套与机器人手分别有自己的 canonicalizer。它们不按通道编号对应，而是按手部解剖区域聚合信息，并输出统一字段：</p>
+<ul>
+<li>接触概率；</li>
+<li>相对强度及其变化；</li>
+<li>接触持续时间；</li>
+<li>接触面积与压力中心；</li>
+<li>不稳定性代理量；</li>
+<li>校准置信度；</li>
+<li>四档强度和六个因果阶段：无接触、开始接触、加载、稳定、不稳定候选、释放。</li>
+</ul>
+<p>有效性掩码是这里一个容易被低估的设计。<strong>“这个位置没有传感器”与“传感器有效但没有接触”不是一回事。</strong> TACROSS 用掩码把缺失测量和真实零值分开，避免模型把硬件空白误学成无接触。</p>
+<h3>2. 传感器专属适配，共享时空编码</h3>
+<p>人类和机器人各有一个浅层 adapter，用来吸收量程、噪声、漂移、迟滞等设备差异。之后，两条分支进入共享的 Transformer：</p>
+<ul>
+<li>16 帧、15 Hz 的因果窗口；</li>
+<li>每帧五根手指，共 80 个 token；</li>
+<li>两层 temporal Transformer 建模接触演化；</li>
+<li>两层 inter-finger Transformer 建模手指间协同；</li>
+<li>最终得到 256 维共享触觉潜变量。</li>
+</ul>
+<p>训练同时使用接触、强度、阶段预测，多正样本对比学习、时间正则和域对抗损失。人类与机器人窗口不要求帧级同步；只要任务、物体、原语、活跃手指、强度和接触阶段相容，就可以作为正样本。</p>
+<h3>3. 策略必须“锚定”在机器人真实动作上</h3>
+<p>策略采用 ACT。输入是三路 RGB、机器人状态和 256 维触觉潜变量，输出长度为 60 的动作块。机器人示范提供唯一的真实动作标签；由 HaMeR 和几何重定向得到的人手目标，只作为置信度加权的辅助监督。</p>
+<p>完整动作监督可以写成机器人侧损失</p>
+<p>$$
+L_{\mathrm{robot-action}}
+=\lVert \pi(I^R,q^R,z^R)-a^R\rVert,
+$$</p>
+<p>它监督机械臂和灵巧手的真实动作。人类侧只有经过置信度和有效性掩码筛选的手部辅助损失：</p>
+<p>$$
+L_{\mathrm{human-hand}}
+=w^H\odot\lVert \pi_{\mathrm{hand}}(I^H,q^H,z^H)-\tilde a_{\mathrm{hand}}^{R,H}\rVert.
+$$</p>
+<p>因此，<strong>人类数据能帮助策略学习接触阶段下的手指开合与多指配合，却不能可靠监督机械臂如何到达、移动和返回。训练阶段可以使用人类与机器人两类数据，部署阶段只走机器人分支。</strong> 这是 TACROSS 与“直接把人类重定向动作当作机器人标签”的重要区别，也解释了为什么它仍然离不开少量机器人示范。</p>
+<h3>4. 正样本对比学习如何影响 ACT？</h3>
+<p>人类与机器人触觉窗口不需要来自同一次操作，也不要求逐帧同步。系统依据任务、物体、动作原语、活跃手指、强度等级和接触阶段选择语义相容的窗口。例如，人类和机器人数据中两个“拇指与食指稳定捏持、强度第二档”的窗口可以组成正样本；处于释放阶段或强度明显不同的窗口则成为负样本或 hard negative。</p>
+<p>InfoNCE 对比损失拉近正样本的潜变量 $(z^H,z^R)^+$，推远接触阶段或强度不同的负样本。这个损失<strong>不直接告诉 ACT 应该输出什么动作</strong>，而是训练 ACT 前面的触觉编码器，让压阻和电容传感器中的同一种接触事件落在相近的 256 维潜空间位置。</p>
+<pre><code class="language-text">人类压阻触觉 → Human canonicalizer → Human adapter  ─┐
+                                                      ├→ 共享触觉编码器 → z → ACT
+机器人电容触觉 → Robot canonicalizer → Robot adapter ─┘
+</code></pre>
+<p>ACT 实际接收的是机器人触觉潜变量，而不是原始电容值：</p>
+<p>$$
+\hat a_{t:t+60}=\pi(I_t^R,q_t^R,z_t^R).
+$$</p>
+<p>对比学习对 ACT 的影响主要有三层：</p>
+<ol>
+<li><strong>塑造策略输入空间。</strong> 稳定捏持、接触开始、加载、释放等状态在潜空间中变得更容易区分，ACT 不必从设备相关的原始噪声中重新发现这些结构。</li>
+<li><strong>让人类数据与机器人数据共享触觉接口。</strong> 如果相同物理接触在人类分支和机器人分支落在完全不同的区域，人类示范对机器人部署没有帮助；对齐后，人类数据学到的接触结构和手部辅助监督可以作用于同一个策略表示空间。</li>
+<li><strong>用大量人类数据改善少量机器人数据上的编码器。</strong> 人类数据提供丰富的接触开始、加载、稳定、不稳定和释放片段；机器人数据则告诉模型这些语义在 Revo2 电容信号中如何表现。</li>
+</ol>
+<p>整个目标可以近似理解为</p>
+<p>$$
+L_{\mathrm{total}}
+=L_{\mathrm{robot-action}}
++\lambda_H L_{\mathrm{human-hand}}
++\lambda_{\mathrm{rep}}L_{\mathrm{rep}},
+$$</p>
+<p>其中 $L_{\mathrm{rep}}$ 包含对比、接触预测、强度、阶段、时间正则和域对抗损失。论文先在 ACT 训练的前 20,000 步冻结触觉编码器，之后才以较低学习率联合微调。这相当于先建立稳定的跨传感器“触觉翻译器”，再让 ACT 学习如何使用它，避免动作损失在训练初期破坏已经对齐的潜空间。</p>
+<p>以定点挤压为例，人类压阻手套和机器人电容手的原始曲线完全不同，但规范化后都可形成“接触开始 → 加载 → 稳定 → 释放”的序列。对比学习把对应阶段拉到相近潜变量区域；机器人动作监督再告诉 ACT，当视觉位置合适且触觉从加载进入稳定时应继续闭合多久、何时释放，以及机械臂如何返回。人类数据扩充了接触过程，机器人数据则把这些过程绑定到真正可执行的动作。</p>
+<h2>23,677 条人类示范，效率提升来自哪里？</h2>
+<p>两种人类采集配置分别是：</p>
+<ul>
+<li><strong>Ego-R</strong>：Rokoko 动捕手套 + TACROSS 触觉手套；</li>
+<li><strong>Ego-V</strong>：普通相机视觉 IK + TACROSS 触觉手套。</li>
+</ul>
+<p>论文共记录 12,784 条 Ego-R 和 10,893 条 Ego-V 人类示范，合计 23,677 条，其中 21,412 条有效；再加上 1,236 条机器人示范，整个语料包含 24,913 条轨迹、183.95 小时记录。</p>
+<p>机器人遥操作约为 40 episode/h，Ego-R 为 112 episode/h，Ego-V 为 140 episode/h，分别快 2.8 倍和 3.5 倍。采集设备成本从机器人遥操作系统的 12,000 美元，降到 Ego-R 的 2,150 美元和 Ego-V 的 520 美元。这里的“成本降低 95.7%”指的是<strong>采集设备投资</strong>，不是完整研发、标定、人工或机器人部署的总成本。</p>
+<h2>四个闭环任务，触觉有没有真正带来收益？</h2>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1791895663/haptic/tacross-human-touch-system_20261013/tacross_fig5_tasks.png" alt="四项接触密集任务中的人类数据、机器人推理和触觉轨迹"></p>
+<p>论文在四项真实机器人任务上测试：定点挤压、烧杯间液体转移、精密移液，以及草莓和葡萄的顺序抓取放置。这些任务共同要求接触时机、力度变化和释放阶段正确，单靠视觉容易受遮挡或细粒度状态歧义影响。</p>
+<p>最有说服力的结果不是 91.5% 与 92.2% 的接近，而是固定机器人数据后的对照：</p>
+<ul>
+<li>30 条机器人示范单独训练，四任务平均成功率为 <strong>51.3%</strong>；</li>
+<li>加入 150 条无触觉的人类示范，提升到 <strong>73.1%</strong>；</li>
+<li>有人类触觉、但没有接触语义对齐时，只有 <strong>49.4%</strong>；</li>
+<li>完整 TACROSS 达到 <strong>91.9%</strong>。</li>
+</ul>
+<p>这组消融支持两个结论：人类示范本身有价值，而异构触觉如果不对齐，甚至可能比不用触觉更糟。</p>
+<p>当机器人/人类示范从 30/150 改为 16/160 时，完整模型平均成功率从 91.9% 降到 88.1%，以 3.8 个百分点的代价减少约 46.7% 的机器人示范。论文另一个固定 15 条机器人示范的实验中，把人类示范从 0 增加到 90，平均成功率从 32.5% 增加到 85.6%。</p>
+<p>固定采集时间预算时，Ego-V 的四任务宏平均成功率为 91.5%，与机器人遥操作的 92.2% 接近；Ego-R 为 93.5%。这说明论文更强的主张不是“低成本方案必然更准”，而是“在类似成功率下，更快、更便宜地获得大量人类触觉示范”。</p>
+<h2>这篇工作的真正贡献在哪里？</h2>
+<p>TACROSS 的贡献可分为三个层级：</p>
+<ol>
+<li><strong>硬件与数据系统</strong>：低成本全手触觉手套、同步视觉/姿态/触觉采集，以及 183.95 小时人机混合语料。</li>
+<li><strong>表示学习</strong>：用接触概率、相对强度、阶段和有效性掩码构造跨传感器的共同语义，再由共享时空编码器形成 256 维潜变量。</li>
+<li><strong>策略学习</strong>：以机器人动作作为真值锚点，人类重定向动作只做置信度加权的辅助监督。</li>
+</ol>
+<p>相较之下，<a href="https://arxiv.org/abs/2512.21233">UniTacHand</a> 把异构触觉投影到 MANO 手表面的统一二维空间，并依赖少量配对数据做对比对齐；<a href="https://arxiv.org/abs/2602.13579">TactAlign</a> 则使用交互产生的伪配对和 rectified flow，把人类触觉运输到机器人潜空间，并强调无配对与零样本策略迁移。TACROSS 的差异不在于首次提出“共享触觉潜空间”，而在于把<strong>事件级规范化、低成本大规模采集和机器人监督策略训练</strong>组合成一条完整链路。</p>
+<p>因此，它更像一篇强系统论文：新意来自多个合理设计的组合与规模化验证，而不是单个全新的学习算子。</p>
+<p>TACROSS 最重要的启发不是“用便宜手套替代昂贵机器人”，而是给出了一个更合理的抽象层：<strong>异构触觉真正可迁移的对象，不一定是传感器数值，而是接触的发生、强弱、持续、稳定和释放。</strong></p>
+</article><div class="article-end"><a href="/">← 继续阅读其他文章</a><a class="source-link" href="https://github.com/mistephan/mistephan.github.io/blob/main/content/vision-tactile/tacross-human-touch-system/tacross_%E6%8A%80%E6%9C%AF%E8%A7%A3%E8%AF%BB.cloudinary.md" target="_blank" rel="noopener noreferrer">查看 Markdown 原稿 ↗</a></div></div></section></main><footer class="site-footer"><div class="wrap"><strong>范硕 / Fan Shuo</strong><span>触觉感知 · 具身智能 · 机器人学习</span></div></footer></body></html>

@@ -1,0 +1,133 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#152019"><meta name="description" content="如果只是把一张触觉图像、一个 marker displacement，或者一串力觉信号，简单拼到视觉 token 后面，模型未必真的学会了接触。它可能只是多看了一路噪声，也可能在训练集里记住了某种传感器的纹理，却没有理解“滑…"><link rel="canonical" href="https://mistephan.github.io/articles/tactile_insertion_wechat/"><link rel="stylesheet" href="/assets/blog.css"><link rel="icon" type="image/png" href="/favicon.png"><title>从 ACT、Diffusion Policy 到 π0 再到 SmolVLA：触觉到底该插在机器人基座模型的哪一层？ | 范硕</title></head><body><header class="site-header"><div class="wrap"><a class="brand" href="/">范硕 <small>VISION × TOUCH NOTES</small></a><nav class="header-links" aria-label="主导航"><a href="/">研究文章</a><a class="work-link" href="/robotics/">工作介绍 ↗</a></nav></div></header><main><section class="article-hero"><div class="wrap"><a class="back-link" href="/">← 返回全部文章</a><div class="eyebrow">RESEARCH NOTES / 策略模型</div><h1>从 ACT、Diffusion Policy 到 π0 再到 SmolVLA：触觉到底该插在机器人基座模型的哪一层？</h1><div class="meta"><time datetime="2026-06-30">2026-06-30</time><span>策略模型</span></div></div></section><section class="article-shell"><div class="article-layout"><article class="article-body"><p>触觉不是“多一路输入”。</p>
+<p>如果只是把一张触觉图像、一个 marker displacement，或者一串力觉信号，简单拼到视觉 token 后面，模型未必真的学会了接触。它可能只是多看了一路噪声，也可能在训练集里记住了某种传感器的纹理，却没有理解“滑动”“压紧”“卡住”“快要掉落”这些真正决定操作成败的物理状态。</p>
+<p>所以今天这篇文章想换一个问法：触觉进入机器人模型时，真正的问题不是“要不要加触觉”，而是“触觉应该插在模型的哪一层”。</p>
+<p>从 ACT、Diffusion Policy，到 π0、π0-fast、SmolVLA，机器人策略模型的主线一直在回答一个问题：如何把感知、语言和任务目标转成一段可靠的动作。触觉研究则在这个主线上继续追问：当任务进入接触丰富、摩擦不确定、遮挡严重、视觉看不见接触状态的时候，触觉到底应该扮演什么角色？</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782833159/haptic/tactile_insertion_wechat_20260630/tactile_insertion_map-edc1511b3a.png" alt="触觉插入基座模型的位置总览"></p>
+<p>本文先把几个常见策略骨架讲清楚，再通过六篇论文介绍下触觉进入动作模型的方式：OmniVTLA、TacFiLM、FTP-1、T-Rex、DPTG、VTAM。它们很适合放在同一张图里比较，因为它们不是简单地“都用了触觉”，而是把触觉插在了六个完全不同的位置。</p>
+<h2>先把机器人策略骨架讲清楚</h2>
+<p>在讨论触觉之前，需要先知道机器人模型本身在往哪里演进。ACT、Diffusion Policy、π0、π0-fast、SmolVLA 并不是同一种东西的不同名字，它们代表了几类很典型的策略建模方式。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782833155/haptic/tactile_insertion_wechat_20260630/policy_backbone_timeline-031007cf42.png" alt="机器人策略骨架演进"></p>
+<h3>ACT：用 action chunk 缩短长时序控制问题</h3>
+<p>ACT 来自论文 <em>Learning Fine-Grained Bimanual Manipulation with Low-Cost Hardware</em>。它的核心思想是 Action Chunking with Transformers：模型不是每次只预测一个很短的动作，而是一次预测一段动作序列。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782833148/haptic/tactile_insertion_wechat_20260630/act_fig4_architecture-22fa1da04c.png" alt="ACT 架构示意"></p>
+<p>这件事解决的是模仿学习里非常经典的问题：如果一个任务要执行很长时间，每一步都可能积累误差，那么单步预测策略很容易越滚越偏。ACT 把长时序任务切成动作块，再配合 transformer 和 CVAE 表达多样化示教，使得低成本双臂机器人也能完成比较精细的操作。</p>
+<p>对后来的 VLA 和触觉策略来说，ACT 的意义在于：它把“动作”从单点输出变成了一个短时间窗口。只要动作变成窗口，触觉就有机会影响整个动作块，而不是只修正下一帧。</p>
+<h3>Diffusion Policy：把动作生成看成去噪过程</h3>
+<p>Diffusion Policy 把机器人动作建模成条件扩散生成问题。模型从一段噪声动作轨迹出发，在视觉和状态条件下逐步去噪，最后得到可执行的动作序列。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782833149/haptic/tactile_insertion_wechat_20260630/diffusion_policy_fig1-e7571fc09d.png" alt="Diffusion Policy 示意"></p>
+<p>它主要解决了两个问题。第一，真实机器人示教经常是多峰的：同一个目标可以从左边抓，也可以从右边抓；可以先推再抓，也可以直接夹取。第二，机器人动作空间是连续且高维的，用简单的回归损失容易把多个可行解平均成一个不可行动作。</p>
+<p>扩散策略的优势是能保留多模态动作分布，并且以 receding horizon 的方式不断重规划。这给触觉留下了一个很自然的位置：触觉可以不是输入 token，而是对扩散采样过程施加物理约束。后面 DPTG 就是沿着这个方向走的。</p>
+<h3>π0：把 VLM 变成连续动作的 VLA flow model</h3>
+<p>π0 可以看作更大规模机器人基础模型路线的代表。它不是只训练某个任务的策略，而是试图把视觉、语言和机器人动作放进同一个通用模型里。它使用视觉语言模型作为基础，再通过 action expert 和 flow matching 生成连续动作块。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782833154/haptic/tactile_insertion_wechat_20260630/pi0_fig3_framework-2a5d94f3b9.png" alt="π0 框架示意"></p>
+<p>π0 的关键转折在于：机器人策略不再只是“看图回归动作”，而是越来越像一个以视觉语言模型为核心、再接上动作生成头的基础模型。语言指令、图像观察、机器人状态、动作块被组织进统一架构里。</p>
+<p>但这也带来一个触觉问题：如果基座模型本身是围绕视觉语言 token 组织起来的，那么触觉要怎样接入？是作为一种新 token？是变成一个专家模块？还是只在动作层提供反馈？</p>
+<h3>π0-fast：把连续动作压成适合自回归模型学习的动作 token</h3>
+<p>π0-fast 背后的关键技术是 FAST，也就是 Frequency-space Action Sequence Tokenization。它把连续动作序列变换到频率空间，再压缩成离散 token，让高频动作也能进入自回归 VLA 的训练框架。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782833162/haptic/tactile_insertion_wechat_20260630/%CF%800fast-overview-99f1e64fdc.png" alt="FAST 框架示意"></p>
+<p>这条路线解决的是效率和可扩展性问题。扩散式动作生成虽然强，但训练和推理都相对重；而自回归模型在语言建模里已经证明了可扩展性。FAST 的作用就是把动作序列改造成更像语言 token 的对象，让机器人动作也能吃到大模型扩展律的红利。</p>
+<p>对触觉来说，这启发了一个很重要的方向：如果动作可以 token 化，触觉是否也可以 token 化？如果不同触觉传感器形态差异很大，能不能建立一个共享的 tactile token space？FTP-1 正是在回答这个问题。</p>
+<h3>SmolVLA：把 VLA 做小、做快、做得更容易部署</h3>
+<p>SmolVLA 代表的是另一条现实主义路线：不只是追求更大的 VLA，而是追求更小、更快、更容易在实验室和真实机器人上部署的 VLA。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782833157/haptic/tactile_insertion_wechat_20260630/smolvla_fig1_architecture-54e781c453.png" alt="SmolVLA 架构示意"></p>
+<p>它使用紧凑的视觉语言模型、动作专家和异步推理栈，让机器人策略可以在更低算力条件下运行。对于触觉研究，这一点非常重要。因为触觉往往需要更高频率的闭环反馈，如果模型太大、推理太慢，触觉就只能作为离线语义信息，而很难成为实时控制信号。</p>
+<p>所以，ACT 解决动作块，Diffusion Policy 解决多模态轨迹生成，π0 解决 VLA 基座模型，π0-fast 解决动作 token 化和高效训练，SmolVLA 解决轻量部署。接下来真正的问题是：当这些骨架已经存在时，触觉应该插进去哪里？</p>
+<h2>六种触觉接入方式</h2>
+<p>我们通过6篇论文来理解六种不同的触觉接入位置。它们不是互斥的路线，但每一种都对应着不同的模型假设。</p>
+<h3>1. OmniVTLA：触觉作为 token / semantic alignment</h3>
+<p>OmniVTLA 的核心是把触觉、视觉和语言放到统一的语义空间里。它构建了 ObjTac 这类视觉-触觉-语言三模态数据，并用语义对齐的 tactile encoder，让触觉不只是低层接触信号，而是能和物体属性、语言描述发生对应。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782833153/haptic/tactile_insertion_wechat_20260630/omnivtla_fig1_semantic_alignment-2a3f048df9.png" alt="OmniVTLA 语义对齐框架"></p>
+<p>这种方式适合回答“我摸到的东西是什么性质”的问题，比如软硬、纹理、材料、接触状态等。它把触觉当成一种可以进入 VLA 的 token，强调的是跨模态语义对齐。</p>
+<p>它的优势是最接近视觉语言基础模型的组织方式：既然图像和文字可以 token 化，触觉也可以作为新的模态 token 进入模型。但它的风险也很清楚：如果只做语义对齐，触觉可能更像“物体属性描述”，而不是高频闭环控制信号。</p>
+<h3>2. TacFiLM：触觉作为 middle-layer modulation</h3>
+<p>TacFiLM 没有选择把触觉直接拼成 token，而是把触觉作为中间层调制信号。它用 FiLM 机制根据触觉特征去调制视觉特征，使模型在中间表征层改变对视觉信息的解释方式。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782833157/haptic/tactile_insertion_wechat_20260630/tacfilm_fig1_overview-2d29b4ce27.png" alt="TacFiLM 中间层调制框架"></p>
+<p>这是一种很实用的路线。它不要求从头训练一个巨大的多模态基础模型，也不要求触觉和视觉完全对齐成同一种 token。触觉更像一个“条件开关”：当手指已经接触物体，视觉特征应该如何被重新解释？当插孔被遮挡，模型应该更信任接触反馈还是相机图像？</p>
+<p>这种插入位置适合现有 VLA 或视觉策略的改造。它的优点是轻量、可迁移、对算力友好；缺点是触觉仍然依附于视觉主干，很难独立承担长期物理预测或跨传感器泛化。</p>
+<h3>3. FTP-1：触觉作为 shared tactile token space / expert</h3>
+<p>FTP-1 更进一步。它的问题不是“某一种触觉传感器怎么接入模型”，而是“不同触觉传感器能不能被统一到一个通用触觉表征里”。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782833152/haptic/tactile_insertion_wechat_20260630/ftp1_fig2_architecture-c0db126aa1.png" alt="FTP-1 触觉专家架构"></p>
+<p>FTP-1 提出 morphology-aware tactile token space，把不同形态、不同分辨率、不同安装方式的触觉传感器映射成共享 token，再通过 tactile expert 进入策略模型。这样做的目标是建立一个跨传感器、跨任务的 foundation tactile policy。</p>
+<p>这和 π0-fast 的动作 token 化有一种呼应：动作可以被 token 化，触觉也需要一个可扩展的 token 空间。FTP-1 的价值在于，它把触觉从“某个硬件的专用输入”提升成“可被基础策略模型复用的专家表征”。</p>
+<p>但它也提出了更高的数据要求。只有当触觉数据足够多、传感器足够多样、任务足够丰富时，共享 tactile token space 才不会退化成某几个传感器的经验映射。</p>
+<h3>4. T-Rex：触觉作为 high-frequency action refinement</h3>
+<p>T-Rex 关注的是另一个现实问题：视觉策略通常跑得不够快，而触觉反馈往往需要高频响应。比如物体开始滑动、接触力突然变化、指尖即将失稳，这些信号如果等到低频视觉策略下一次规划，可能已经晚了。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782833160/haptic/tactile_insertion_wechat_20260630/trex_fig1_overview-0b72f8c54e.png" alt="T-Rex 高频触觉修正框架"></p>
+<p>因此 T-Rex 把控制分成两层：慢速的动作生成负责规划，快速的触觉专家负责实时修正。触觉在这里不是语义 token，也不是中间层调制，而是一个 action refinement loop。</p>
+<p>这种位置非常适合灵巧操作。它承认触觉的最大价值之一不是“告诉模型物体叫什么”，而是“在接触发生后的几十毫秒内修正动作”。对于抓取滑移、插入、拨动、旋转、柔性物体操作，这种高频闭环可能比单纯扩大模型规模更关键。</p>
+<h3>5. DPTG：触觉作为 diffusion feasibility guidance</h3>
+<p>DPTG 则把触觉放在扩散策略的采样过程中。视觉驱动的 diffusion policy 负责生成候选动作，触觉可行性模块负责判断这些动作在接触层面是否合理，并对去噪过程提供 guidance。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782833150/haptic/tactile_insertion_wechat_20260630/dptg_fig1_asymmetric-c784378f62.png" alt="DPTG 触觉可行性引导"></p>
+<p>这里的触觉不是主生成器，而是一个物理可行性约束。它回答的问题是：当前动作虽然从视觉上看可行，但从接触、摩擦、受力角度看，是否会卡住、打滑、用力过大？</p>
+<p>这条路线特别适合 Diffusion Policy。因为扩散模型本身就是逐步采样动作轨迹，触觉可以在采样过程中改变动作分布，而不是只在输入端提供额外观测。它的优势是清晰、可控，也更容易解释；限制是触觉模块的质量会直接决定 guidance 是否可靠。</p>
+<h3>6. VTAM：触觉作为 world model prediction target / input</h3>
+<p>VTAM 把触觉放进世界模型。它不是只问“下一步该怎么动”，而是问“如果我这样动，未来的视觉、触觉、动作、力会怎样变化”。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782833161/haptic/tactile_insertion_wechat_20260630/vtam_fig1_overview-64b15ddb90.png" alt="VTAM 视触觉动作模型"></p>
+<p>这是一种更偏预测式的建模方式。触觉既可以作为输入，也可以作为未来预测目标。模型通过预测未来触觉和视觉变化，学习接触动力学，而不是只学习从当前观测到动作的映射。</p>
+<p>这种位置适合复杂物理交互：遮挡、多阶段接触、非刚体变化、工具使用、接触状态难以直接观测的任务。它的价值在于，触觉不只是帮助当下动作决策，而是成为模型理解物理世界变化的一部分。</p>
+<h2>一张表总结：触觉到底插在哪里</h2>
+<table>
+<thead>
+<tr>
+<th>论文</th>
+<th>触觉角色</th>
+<th>插入位置</th>
+<th>更适合的问题</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>OmniVTLA</td>
+<td>token / semantic alignment</td>
+<td>输入 token 与语义空间</td>
+<td>材料、纹理、物体属性、触觉语言对齐</td>
+</tr>
+<tr>
+<td>TacFiLM</td>
+<td>middle-layer modulation</td>
+<td>视觉主干中间层</td>
+<td>在已有视觉/VLA 策略上轻量接入触觉</td>
+</tr>
+<tr>
+<td>FTP-1</td>
+<td>shared tactile token space / expert</td>
+<td>独立触觉专家与共享 token 空间</td>
+<td>跨传感器、跨任务的通用触觉策略</td>
+</tr>
+<tr>
+<td>T-Rex</td>
+<td>high-frequency action refinement</td>
+<td>动作输出后的快速闭环</td>
+<td>滑移、力变化、灵巧操作中的实时修正</td>
+</tr>
+<tr>
+<td>DPTG</td>
+<td>diffusion feasibility guidance</td>
+<td>扩散采样过程</td>
+<td>用触觉约束动作物理可行性</td>
+</tr>
+<tr>
+<td>VTAM</td>
+<td>world model prediction target/input</td>
+<td>预测式世界模型</td>
+<td>学习接触动力学和未来物理状态</td>
+</tr>
+</tbody></table>
+<p>这六种方式其实对应着六个层级：</p>
+<p>第一层是输入层：把触觉变成 token，让模型“看见”触觉。</p>
+<p>第二层是表征层：用触觉调制视觉或语言中间表征，让模型重新解释当前状态。</p>
+<p>第三层是专家层：为触觉建立独立 expert，让它有自己的编码和推理空间。</p>
+<p>第四层是控制层：让触觉以更高频率修正动作，而不是等待慢速策略重新规划。</p>
+<p>第五层是采样层：在 diffusion 或生成过程中，用触觉约束动作可行性。</p>
+<p>第六层是世界模型层：把触觉作为未来物理状态的一部分进行预测。</p>
+<h2>我的判断：不要先争早融合还是晚融合</h2>
+<p>很多讨论会先问：原始触觉图像和 marker displacement 应该早融合还是晚融合？但看完这几类工作后，我更倾向于先问另一个问题：触觉在你的任务里到底负责什么。</p>
+<p>如果触觉主要提供物体属性和接触语义，那么 OmniVTLA 式 token / semantic alignment 很自然。</p>
+<p>如果你已经有一个视觉策略，只想用触觉提升接触状态判断，那么 TacFiLM 式中间层调制更划算。</p>
+<p>如果你要跨不同触觉传感器训练一个通用模型，那么 FTP-1 的 shared tactile token space 更重要。</p>
+<p>如果任务成败取决于毫秒级接触变化，那么 T-Rex 式高频动作修正更接近触觉本来的优势。</p>
+<p>如果你的策略骨架是 diffusion，那么 DPTG 式 feasibility guidance 会比简单拼接输入更有结构性。</p>
+<p>如果你关心长程物理交互和接触动力学，那么 VTAM 式 world model 才能让触觉真正参与“理解未来”。</p>
+<p>所以，触觉不是多一路输入，而是一组可以插入不同层级的物理信号。它可以是语义，可以是调制，可以是专家，可以是反馈，可以是约束，也可以是世界模型里的未来。</p>
+<p>下一步真正值得讨论的，不是“机器人模型要不要触觉”，而是：在 ACT、Diffusion、π0、π0-fast、SmolVLA 这些不同策略骨架里，触觉到底应该被设计成哪一种角色。</p>
+<p>这也会决定未来触觉数据集该怎么采、触觉传感器该怎么标准化，以及多模态机器人基础模型该如何从“看见世界”走向“摸懂世界”。</p>
+</article><div class="article-end"><a href="/">← 继续阅读其他文章</a><a class="source-link" href="https://github.com/mistephan/mistephan.github.io/blob/main/content/vision-tactile/tactile_insertion_wechat/%E8%A7%A6%E8%A7%89%E6%8F%92%E5%85%A5%E5%9F%BA%E5%BA%A7%E6%A8%A1%E5%9E%8B_%E5%85%AC%E4%BC%97%E5%8F%B7%E5%9B%BE%E6%96%87%E7%A8%BF.cloudinary.md" target="_blank" rel="noopener noreferrer">查看 Markdown 原稿 ↗</a></div></div></section></main><footer class="site-footer"><div class="wrap"><strong>范硕 / Fan Shuo</strong><span>触觉感知 · 具身智能 · 机器人学习</span></div></footer></body></html>

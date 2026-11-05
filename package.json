@@ -1,0 +1,11 @@
+{
+  "name": "vision-tactile-notes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:articles": "node scripts/build-articles.mjs"
+  },
+  "devDependencies": {
+    "marked": "16.4.2"
+  }
+}

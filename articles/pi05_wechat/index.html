@@ -1,0 +1,117 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#152019"><meta name="description" content="它不像 ACT 那样代表一个非常清楚的 action chunking 范式，也不像 Diffusion Policy 那样几乎成为“动作生成”的通用基线。π0.5 更像是 VLA 时代的一块路标：当大家开始认真讨论机器人模…"><link rel="canonical" href="https://mistephan.github.io/articles/pi05_wechat/"><link rel="stylesheet" href="/assets/blog.css"><link rel="icon" type="image/png" href="/favicon.png"><title>为什么大家总拿 π0.5 做实验？一文拆开这个机器人模型的结构细节 | 范硕</title></head><body><header class="site-header"><div class="wrap"><a class="brand" href="/">范硕 <small>VISION × TOUCH NOTES</small></a><nav class="header-links" aria-label="主导航"><a href="/">研究文章</a><a class="work-link" href="/robotics/">工作介绍 ↗</a></nav></div></header><main><section class="article-hero"><div class="wrap"><a class="back-link" href="/">← 返回全部文章</a><div class="eyebrow">RESEARCH NOTES / 策略模型</div><h1>为什么大家总拿 π0.5 做实验？一文拆开这个机器人模型的结构细节</h1><div class="meta"><time datetime="2026-07-01">2026-07-01</time><span>策略模型</span></div></div></section><section class="article-shell"><div class="article-layout"><article class="article-body"><p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782919629/haptic/pi05_wechat_20260701/pi05_wechat_cover-52fa4129af.png" alt="π0.5 文章封面概念图"></p>
+<p>近期看触觉基础模型论文，经常会看到一个名字：π0.5。</p>
+<p>它不像 ACT 那样代表一个非常清楚的 action chunking 范式，也不像 Diffusion Policy 那样几乎成为“动作生成”的通用基线。π0.5 更像是 VLA 时代的一块路标：当大家开始认真讨论机器人模型能不能走出实验室、进到陌生家庭、完成长时程任务时，π0.5 给出了一个比较完整的系统答案。</p>
+<p>所以很多论文喜欢拿它做参照，并不只是因为它“性能强”，更因为它把几个关键问题都摆在了台面上：</p>
+<p>机器人基础模型到底该用多少机器人数据？网页视觉语言数据有没有用？不同机器人 embodiment 的数据能不能迁移？长任务是否必须显式预测子任务？动作到底该用离散 token，还是连续 flow matching？</p>
+<p>今天我们就拆开这篇论文：<em>π0.5: a Vision-Language-Action Model with Open-World Generalization</em>。</p>
+<p>作者来自 Physical Intelligence。论文作者列表很长，包括 Kevin Black、Noah Brown、Danny Driess、Chelsea Finn、Karol Hausman、Brian Ichter、Sergey Levine、Karl Pertsch、Quan Vuong、Homer Walke、Lili Yu 等。作者单位在论文中标注为 Physical Intelligence。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782919618/haptic/pi05_wechat_20260701/pi05_fig1_overview-48650c3405.png" alt="π0.5 总览图"></p>
+<h2>π0.5 不是 π0 的“小升级”</h2>
+<p>从名字看，π0.5 很容易被误解成 π0 和 π1 之间的中间版本。但从论文内容看，它真正想解决的问题和 π0 有一个明显变化。</p>
+<p>π0 的核心是：用视觉语言模型作为基础，接上 action expert，通过 flow matching 生成连续动作，让 VLA 可以控制真实机器人。</p>
+<p>π0.5 的核心则是：让这个 VLA 不只会在训练分布附近做动作，而是能在新家庭、新物体、新布局里完成长时程任务。</p>
+<p>换句话说，π0 更强调“通用动作生成模型怎么做”，π0.5 更强调“机器人模型怎么从多种知识来源里学到开放世界泛化能力”。</p>
+<p>论文里最有代表性的例子是：机器人被放进训练时没见过的新厨房或新卧室，只给一个高层任务，比如“把盘子放进水槽”“把衣服放进洗衣篮”“整理卧室”。模型不仅要执行动作，还要自己决定下一步子任务是什么。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782919619/haptic/pi05_wechat_20260701/pi05_fig2_kitchen_rollout-41ec2b5124.png" alt="π0.5 在新厨房中的任务执行"></p>
+<p>这就是为什么 π0.5 经常被拿出来讨论：它不是一个单任务 policy，而是一个把 VLA、长时程任务、开放环境泛化、异构数据共训练、高层语义推理都揉在一起的系统样板。</p>
+<h2>结构细节一：它是一个两层推理的 VLA</h2>
+<p>π0.5 的推理不是一步到位输出动作。它先做高层推理，再做低层控制。</p>
+<p>给定一个高层命令，比如：</p>
+<blockquote>
+<p>clean the bedroom</p>
+</blockquote>
+<p>模型会先预测一个更具体的 subtask：</p>
+<blockquote>
+<p>pick up the pillow</p>
+</blockquote>
+<p>然后再基于这个 subtask 预测连续动作 chunk。</p>
+<p>这件事很关键。因为家庭任务不是单步操作，而是由很多局部动作组成的长链条。如果直接把“clean the bedroom”丢给低层动作模型，它需要在同一个 forward 过程中同时解决语义理解、任务分解、物体选择、路径规划和动作控制，难度太高。</p>
+<p>π0.5 的做法更像给 VLA 加了一层内部 chain-of-thought：先把长期目标翻译成当前应该执行的短子任务，再把短子任务交给动作专家。</p>
+<p>论文把这个分解写成：</p>
+<p>高层部分预测 subtask，低层部分在 subtask 条件下预测 action chunk。注意，这里不是两个完全分离的模型，而是同一个 π0.5 模型承担高层和低层推理。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782919620/haptic/pi05_wechat_20260701/pi05_fig3_model_overview-1df66682bf.png" alt="π0.5 模型结构图"></p>
+<p>这也是 π0.5 和很多“LLM planner + robot policy”方案不同的地方。它不是让外部大语言模型负责规划，再让机器人策略执行；而是让 VLA 自己从机器人数据、网页数据和人工指令里学会如何输出 subtask。</p>
+<h2>结构细节二：它不是只吃机器人动作数据</h2>
+<p>如果只看机器人模型，很多人第一反应是：那就多采机器人数据。</p>
+<p>π0.5 的答案更微妙：机器人数据当然重要，但光靠目标机器人数据很难覆盖真实世界的变化。一个家庭机器人要面对的不是一张固定桌面，而是完全不同的厨房、卧室、抽屉、衣服、餐具、家具、光照和布局。</p>
+<p>所以 π0.5 的训练配方里有很多种数据。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782919621/haptic/pi05_wechat_20260701/pi05_fig4_training_data_recipe-7080233420.png" alt="π0.5 训练数据配方"></p>
+<p>论文把数据源拆成几类：</p>
+<p>第一类是 MM，也就是 mobile manipulator data。大约 400 小时，来自移动双臂机器人在约 100 个家庭环境中的家务任务。这是最贴近最终评测任务的数据。</p>
+<p>第二类是 ME，也就是 diverse multi-environment non-mobile robot data。它来自非移动机器人，在更多家庭环境中采集。虽然 embodiment 不同，但环境更多样。</p>
+<p>第三类是 CE，也就是 cross-embodiment laboratory data。它来自实验室里不同机器人、不同任务的数据，可以提供更宽的动作和任务覆盖。</p>
+<p>第四类是 HL，高层 semantic subtask prediction。也就是把长任务标成短子任务，例如“adjust the blanket”“pick up pillow”。这类数据教模型如何做任务分解。</p>
+<p>第五类是 WD，multi-modal web data。包括图像描述、VQA、目标定位等网页视觉语言数据。它不直接教机器人怎么动，但帮助模型理解物体、场景和语言。</p>
+<p>第六类是 VI，verbal instruction。人在执行过程中用语言一步步指导机器人，相当于给模型示范“长任务应该如何拆”。</p>
+<p>这就是 π0.5 值得研究的地方。它把机器人学习从“收集动作轨迹”拓展成“组合多种监督信号”。</p>
+<h2>结构细节三：预训练用离散 token，后训练用连续动作</h2>
+<p>π0.5 还有一个很漂亮的工程选择：训练和推理不是同一种动作表示。</p>
+<p>在预训练阶段，它把机器人动作通过 FAST（Frequency-space Action Sequence Tokenization） tokenizer 编码成离散 token。这样做的好处是简单粗暴但有效：视觉、语言、bounding box、subtask、动作都可以塞进同一个 next-token prediction 框架里。</p>
+<p>这有点像把机器人数据改造成语言模型能理解的格式。模型不需要一开始就处理复杂的连续动作分布，而是先学会在大量异构数据上做序列预测。</p>
+<p>但到了真实机器人控制时，纯自回归动作 token 解码会比较慢，也不够适合细粒度连续控制。于是 π0.5 在 post-training 阶段加入 action expert，用 flow matching 生成连续 action chunk。</p>
+<p>也就是说：</p>
+<p>预训练阶段：用 FAST 离散动作 token，追求大规模高效训练。</p>
+<p>后训练/推理阶段：用 flow matching 连续动作，追求实时控制和精细动作。</p>
+<p>这正是很多研究者关注 π0.5 的原因之一。它不是在“离散动作 token”和“连续动作 diffusion/flow”之间二选一，而是把两者放到一个两阶段流程里。</p>
+<h2>结构细节四：机器人本体并不复杂，复杂的是模型和数据</h2>
+<p>论文里的机器人系统本身并没有使用复杂的传统规划栈。两个移动操作平台都有四个相机、双 6 DoF 机械臂、夹爪、移动底盘和升降机构。π0.5 直接输出手臂、夹爪、底盘和升降机构的目标控制量，再用简单 PD controller 跟踪。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782919622/haptic/pi05_wechat_20260701/pi05_fig5_robot_system-fc4be56501.png" alt="π0.5 使用的移动操作机器人系统"></p>
+<p>这一点很重要：π0.5 的系统哲学更接近端到端学习，而不是“高级 planner + 几何规划 + 手写控制器”的传统路线。</p>
+<p>论文甚至强调，系统没有额外轨迹规划或碰撞检测，操作和导航控制都是 end-to-end 的。这当然带来风险，但也让论文的主张更清楚：如果泛化能力出现了，主要来自模型和数据配方，而不是大量手工工程模块。</p>
+<h2>实验为什么有说服力？</h2>
+<p>π0.5 的实验设计比较完整。它既有真实家庭评测，也有可控 mock home 评测。</p>
+<p>真实家庭用于展示模型能否真的走出训练环境；mock home 用于更稳定地做定量比较和消融。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782919623/haptic/pi05_wechat_20260701/pi05_fig6_eval_environments-5a7cdcc955.png" alt="π0.5 的评测环境"></p>
+<p>在真实家庭里，模型完成的任务包括把物品放进抽屉、把衣服放进洗衣篮、把餐具放进水槽等。论文中的 rollout 图可以看到，模型每一步都会输出当前预测的 high-level subtask。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782919626/haptic/pi05_wechat_20260701/pi05_fig7_real_home_eval-aed1acf638.png" alt="π0.5 在真实家庭中的评测"></p>
+<p>这说明它不是只在低层动作上模仿示教，而是在运行时显式做任务分解。对于长时程家务任务，这一点非常关键。</p>
+<h2>为什么训练地点数量这么重要？</h2>
+<p>论文还做了一个很直观的 scaling 实验：改变训练数据中家庭环境的数量，观察模型在未见环境中的表现。</p>
+<p>结果很符合直觉，但也很有价值：训练地点越多，模型在新环境里的表现越好。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782919627/haptic/pi05_wechat_20260701/pi05_fig8_location_scaling-a7b92673c2.png" alt="训练地点数量与任务表现"></p>
+<p>更有意思的是语言跟随能力。随着训练地点增加，模型不仅更会完成任务，也更会根据语言找到正确物体。对于训练中见过类别的物体，提升更快；对于训练中未见类别的 OOD 物体，提升更慢，但仍然随环境多样性提高。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782919628/haptic/pi05_wechat_20260701/pi05_fig9_language_scaling-6bd706e23b.png" alt="训练地点数量与语言跟随能力"></p>
+<p>这给后来很多机器人论文一个很强的启发：如果你想评估泛化，不能只看任务数量，还要看环境数量。机器人在一个实验室里做 100 个任务，和在 100 个家庭里做相关任务，学到的东西很可能完全不同。</p>
+<h2>为什么网页数据有用？</h2>
+<p>很多人会怀疑：网页图像问答、图像描述、目标定位这些数据，真的能帮助机器人吗？</p>
+<p>π0.5 的答案是：对动作执行未必总是直接有用，但对语义泛化很重要。</p>
+<p>论文的消融显示，去掉 WD，也就是 web data，在某些 mock home 任务上影响不一定显著；但在 OOD object language following 上影响明显。换句话说，网页数据更像是给机器人补“世界知识”和“物体语义”，而不是直接教它如何发力、如何抓取、如何避免碰撞。</p>
+<p>这点对触觉/力觉研究也有启发：网页数据能补语义，但补不了接触物理。未来如果要让 VLA 真正理解摩擦、滑移、接触稳定性，就需要类似 WD 的大规模非动作数据，也需要触觉/力觉自己的数据源。</p>
+<h2>为什么跨 embodiment 数据有用？</h2>
+<p>π0.5 的另一个重要结论是：来自其他机器人、其他环境、其他任务的数据真的有用。</p>
+<p>消融实验显示，去掉 ME 或 CE 都会明显降低表现，同时去掉两者更糟。</p>
+<p>这解释了为什么大家总喜欢拿 π0.5 做实验：它让“跨机器人数据到底有没有用”不再只是口号，而是被放进了一个比较完整的实验系统里。</p>
+<p>对后续模型来说，π0.5 也提出了一个很现实的问题：如果一个实验室没有 400 小时目标机器人数据，能不能用其他机器人数据、网页数据、高层标注和少量真实数据组合出类似效果？这就是很多后续工作想回答的问题。</p>
+<h2>π0.5 为什么比 π0 更强？</h2>
+<p>论文把 π0.5 和 π0、π0-FAST+Flow 做了对比。</p>
+<p>π0-FAST+Flow 可以理解成作者给 π0 做了一个增强版：加入类似的动作表示训练方式，但不使用 HL 和 WD 等非动作数据，也不能做高层 inference。</p>
+<p>结果是完整 π0.5 明显更强。</p>
+<p>这说明 π0.5 的优势不只是动作头换了，也不只是训练更久，而是整套 co-training recipe 在起作用：高层子任务、网页语义、跨 embodiment 数据和两阶段训练共同构成了优势。</p>
+<h2>高层 inference 到底有多重要？</h2>
+<p>最后一个关键实验是 high-level inference 消融。</p>
+<p>论文比较了几种方式：完整 π0.5、去掉网页数据、去掉 verbal instruction、只用低层 inference、不训练 high-level data、用 GPT-4 做 high-level policy、用人类做 oracle high-level policy。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1782919617/haptic/pi05_wechat_20260701/pi05_fig13_high_level_inference-df3fd2f2d1.png" alt="π0.5 高层 inference 消融"></p>
+<p>结果很有意思：完整 π0.5 表现最好；只在训练里使用 high-level data、但推理时不显式输出 subtask 的 implicit HL 也表现不错；而完全没有 high-level data 的 no HL 明显更差。</p>
+<p>这说明一个重要点：高层子任务不仅在推理时有用，在训练时也能改变模型学到的内部表示。</p>
+<p>更有意思的是，GPT-4 做 high-level policy 的结果并不好。这并不是说 GPT-4 不聪明，而是说明机器人高层规划不是纯语言推理问题。它需要知道当前机器人能做什么、低层 policy 擅长什么、环境里哪些动作可执行。</p>
+<p>所以 π0.5 的高层 inference 价值在于：它是被机器人数据对齐过的高层推理，而不是脱离行动能力的文本规划。</p>
+<h2>所以，为什么大家总拿 π0.5 做实验？</h2>
+<p>我觉得有五个原因。</p>
+<p>第一，它把 open-world generalization 具体化了。不是只说“泛化”，而是评测未见家庭、未见布局、未见物体和长时程家务任务。</p>
+<p>第二，它把 VLA 的结构拆得很清楚。高层 subtask prediction、低层 action expert、FAST 离散动作、flow matching 连续动作，每一块都能被后续论文拿来对比或替换。</p>
+<p>第三，它的数据配方足够丰富。MM、ME、CE、HL、WD、VI 这些缩写看起来多，但它们刚好覆盖了机器人泛化需要的几类知识来源：目标 embodiment、其他 embodiment、任务语义、网页常识和人类指导。</p>
+<p>第四，它做了比较系统的消融。后续研究如果提出“我也能泛化”“我也能用网页数据”“我也能用跨机器人数据”，很自然会被拿来和 π0.5 的结论放在一起讨论。</p>
+<p>第五，它暴露了 VLA 的下一批问题。比如上下文记忆不足、遮挡问题、物理接触困难、抽屉/柜门这类机构操作不稳定、真实家庭评测规模有限。这些问题刚好是后续研究可以继续推进的方向。</p>
+<h2>但也别神化 π0.5</h2>
+<p>π0.5 很重要，但它不是一个低成本万能基线。</p>
+<p>它的数据、硬件和训练资源门槛都很高。论文展示的是一个强系统，而不是一个普通实验室可以轻松复现的开箱模型。</p>
+<p>它的真实家庭评测也仍然有限。3 个真实家庭足以证明方向很有价值，但还不能代表所有家庭环境、所有家具结构、所有人类偏好。</p>
+<p>它对物理接触的理解也还不够。网页数据能让模型知道“杯子”“抽屉”“枕头”是什么，但不能让模型天然知道接触力是否过大、物体是否即将滑落、柔性物体是否被拉扯变形。</p>
+<p>这也是为什么我觉得 π0.5 对触觉、力觉、多模态机器人研究很有启发：它已经给出了“异构数据如何进 VLA”的模板，但还没有完全解决“物理接触信息如何进 VLA”的问题。</p>
+<h2>结语</h2>
+<p>π0.5 的价值，不只是它能做家务，而是它把机器人基础模型的几个关键选择都摆到了桌面上：</p>
+<p>用什么数据训练？如何混合网页知识和机器人经验？高层任务分解要不要显式建模？动作是离散 token 还是连续 flow？跨 embodiment 数据到底有没有用？新环境泛化应该怎么评测？</p>
+<p>所以，当我们看到越来越多论文拿 π0.5 做参照时，真正值得看的不是“它是不是榜单第一”，而是它已经变成了一种结构语言。</p>
+<p>理解 π0.5，就是理解当前 VLA 研究正在从“会执行一个动作”走向“能在陌生世界里组织一段行为”。</p>
+<p>而下一步，也许就是把视觉语言模型、动作模型、世界模型、触觉模型和人类监督，更系统地放进同一个机器人基础模型框架里。</p>
+</article><div class="article-end"><a href="/">← 继续阅读其他文章</a><a class="source-link" href="https://github.com/mistephan/mistephan.github.io/blob/main/content/vision-tactile/pi05_wechat/%CF%800.5_%E5%85%AC%E4%BC%97%E5%8F%B7%E5%9B%BE%E6%96%87%E7%A8%BF.cloudinary.md" target="_blank" rel="noopener noreferrer">查看 Markdown 原稿 ↗</a></div></div></section></main><footer class="site-footer"><div class="wrap"><strong>范硕 / Fan Shuo</strong><span>触觉感知 · 具身智能 · 机器人学习</span></div></footer></body></html>

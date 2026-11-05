@@ -1,0 +1,80 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#152019"><meta name="description" content="在机器人模仿学习中，UMI（Universal Manipulation Interface）一类设备一直有一个尴尬定位：它能让人脱离机器人本体采集大量示教，但训练出的策略通常还需要真实机器人遥操作数据做最后适配。换句话说，…"><link rel="canonical" href="https://mistephan.github.io/articles/hifi_umi_20260806/"><link rel="stylesheet" href="/assets/blog.css"><link rel="icon" type="image/png" href="/favicon.png"><title>机器人后训练，真的可以不再依赖机器人数据吗？ | 范硕</title></head><body><header class="site-header"><div class="wrap"><a class="brand" href="/">范硕 <small>VISION × TOUCH NOTES</small></a><nav class="header-links" aria-label="主导航"><a href="/">研究文章</a><a class="work-link" href="/robotics/">工作介绍 ↗</a></nav></div></header><main><section class="article-hero"><div class="wrap"><a class="back-link" href="/">← 返回全部文章</a><div class="eyebrow">RESEARCH NOTES / 数据采集</div><h1>机器人后训练，真的可以不再依赖机器人数据吗？</h1><div class="meta"><time datetime="2026-08-06">2026-08-06</time><span>数据采集</span></div></div></section><section class="article-shell"><div class="article-layout"><article class="article-body"><h2>HiFi-UMI 用 2 万小时高保真人类示教，挑战真实机器人数据的“锚点”地位</h2>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1786028845/haptic/hifi_umi_20260806/cover_hifi_umi_20260806.png" alt="HiFi-UMI：高保真人类示教数据直接训练可部署双臂机器人策略"></p>
+<p><strong>论文：</strong> HiFi-UMI: Learning Deployable Manipulation Policies from High-Fidelity UMI Data Alone<br><strong>机构：</strong> Simple AI<br><strong>版本：</strong> arXiv:2607.25895v1，2026 年 7 月 28 日<br><strong>链接：</strong> <a href="https://arxiv.org/abs/2607.25895">https://arxiv.org/abs/2607.25895</a></p>
+<p>在机器人模仿学习中，UMI（Universal Manipulation Interface）一类设备一直有一个尴尬定位：它能让人脱离机器人本体采集大量示教，但训练出的策略通常还需要真实机器人遥操作数据做最后适配。换句话说，UMI 数据负责“扩规模”，机器人数据仍然是保证部署性能的“锚”。</p>
+<p>HiFi-UMI 想验证一个更激进的问题：如果无机器人采集的数据足够准确、同步、完整，并且经过严格的数据重建和质检，能不能直接完成策略后训练并部署到真实机器人，完全跳过真实机器人示教？</p>
+<p>论文给出的答案是：在四项桌面双臂操作任务和三类策略骨干上，可以做到接近甚至超过真实机器人遥操作数据的水平。但这项工作的真正价值，不是简单宣称“UMI 胜过遥操作”，而是展示了一条把人类示教从低成本采集推进到可部署训练数据的完整工程路径。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1786028847/haptic/hifi_umi_20260806/paper_fig1_overview.png" alt="HiFi-UMI 从数据采集、高保真数据引擎到真实机器人部署的整体框架"></p>
+<h2>一、关键变化不是“更多数据”，而是数据保真度</h2>
+<p>机器人策略对示教数据中的小误差非常敏感。几毫米的位姿偏差、图像与动作之间的时间错位、相机遮挡或偶发丢帧，都可能被模型学习成错误的动作条件。传统 UMI 数据量虽然大，但从人的手部运动到机器人末端动作之间，仍存在感知、时序和形态映射误差。</p>
+<p>HiFi-UMI 围绕四个目标重新设计了采集系统：准确且可扩展的位姿获取、面向操作的夹爪形态、多视角宽覆盖感知，以及在线质量控制。</p>
+<p>系统采用头戴式双目惯性 SLAM，对左右手夹爪进行同一坐标系下的定位；双手各配置两台广角相机，覆盖约 200° 视野；共享 GPIO 硬件触发将跨传感器时间偏差压到 40 微秒以内；全掌式夹爪则尽量减少人手示教与机器人夹爪之间的动作语义差异。</p>
+<p>论文报告的局部末端轨迹精度约为 3 mm，平均每 27 万帧少于 1 次丢帧。这里最重要的不是某一个传感器参数，而是位姿、视觉、时序和夹爪状态共同满足训练数据的闭环一致性。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1786028849/haptic/hifi_umi_20260806/paper_fig3_hardware.png" alt="HiFi-UMI 采集装置：头戴双目惯性定位、双手宽视角相机与全掌夹爪"></p>
+<h2>二、把“采到的数据”变成“可训练的数据”</h2>
+<p>高规格硬件只解决了采集入口，真正决定数据能否规模化使用的是后续的数据引擎。HiFi-UMI 的流程包括轨迹重建、自动清洗、仿真重定向与回放、AI 辅助标注、人工复核，以及最终的训练和真实机器人评估。</p>
+<p>作者报告，完整流程实现了 98% 的轨迹重建成功率和 98% 的仿真回放验证通过率，累计可用数据率约为 96%。这意味着系统不是先收集海量原始视频，再把质量问题留给训练阶段，而是在数据进入模型前尽量发现轨迹漂移、接触不合理和动作映射失败。</p>
+<p>基于这套流水线，团队构建了超过 2 万小时、432 万条轨迹、覆盖 480 多个场景的数据集，并释放其中 2000 小时作为 HiFi-UMI-2K。公开部分包含 48.21 万条轨迹、110 多个场景和六路相机视角。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1786028851/haptic/hifi_umi_20260806/paper_fig4_pipeline.png" alt="从采集、轨迹重建、仿真回放到标注、训练和评测的数据流水线"></p>
+<h2>三、最关键的实验：只用 UMI 后训练，能否直接部署？</h2>
+<p>作者选择了三种不同范式的模型：StarVLA-QwenPI、OpenPI-π0.5 两个视觉-语言-动作模型，以及 LingBot-VA 世界动作模型。任务包括污渍擦拭、衣物折叠、遥控器精密插入和果蔬分拣。每个“任务—策略”组合进行 40 次真实机器人测试，总计 960 次 rollout。</p>
+<p>在四项任务的平均成功率上，论文报告：</p>
+<table>
+<thead>
+<tr>
+<th>模型</th>
+<th align="right">仅用 HiFi-UMI 后训练</th>
+<th align="right">真实机器人遥操作后训练</th>
+<th align="right">差值</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>StarVLA-QwenPI</td>
+<td align="right">51.3%</td>
+<td align="right">53.8%</td>
+<td align="right">-2.5 个百分点</td>
+</tr>
+<tr>
+<td>OpenPI-π0.5</td>
+<td align="right">77.5%</td>
+<td align="right">74.4%</td>
+<td align="right">+3.1 个百分点</td>
+</tr>
+<tr>
+<td>LingBot-VA</td>
+<td align="right">56.9%</td>
+<td align="right">57.5%</td>
+<td align="right">-0.6 个百分点</td>
+</tr>
+</tbody></table>
+<p>其中最醒目的结果来自 OpenPI-π0.5：仅用 HiFi-UMI 后训练，在遥控器精密插入任务上达到 85% 成功率，而真实机器人遥操作数据对应结果为 77.5%。这说明高保真人类示教不仅适用于粗粒度抓放，也可以支持对位置精度要求较高的接触任务。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1786028852/haptic/hifi_umi_20260806/paper_fig9_vla_results.png" alt="两类 VLA 在四项真实机器人任务上的 UMI 与遥操作数据对照"></p>
+<p>论文还给出了数据规模曲线。以 OpenPI-π0.5 的精密插入为例，UMI 示教从 400 条增加到 3200 条时，成功率从 37.5% 提升到 85%；继续增加到 6400 条后结果为 82.5%。它支持“更多高质量数据有益”的判断，但也提醒我们：真实机器人评测存在方差，规模增长并不保证每一个采样点都单调提升。</p>
+<h2>四、4 千小时预训练，比单任务后训练更有想象力</h2>
+<p>如果只看后训练实验，HiFi-UMI 仍然是一种更方便的数据采集方式。更值得关注的是，作者进一步用 4000 小时多任务 UMI 数据预训练 StarVLA-QwenPI。</p>
+<p>随着数据规模增长，模型在留出数据上的动作误差下降 61%，在十项未见任务上的动作均方误差下降 41%。在真实机器人测试中，从 UMI 预训练检查点开始后训练，四项任务平均成功率由 51.3% 提升至 69.4%，增加 18.1 个百分点。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1786028854/haptic/hifi_umi_20260806/paper_fig15_pretrain_gain.png" alt="UMI 多任务预训练给 StarVLA-QwenPI 带来的真实机器人成功率提升"></p>
+<p>这组结果把 HiFi-UMI 的意义从“替代单任务遥操作”推向了“机器人基础模型的数据底座”：只要不同场景、不同任务中的动作和视觉信号能够在统一标准下重建，机器人训练数据就可能像互联网视频一样扩展，而不必始终绑定昂贵的机器人机时。</p>
+<p>不过，预训练增益目前只在 StarVLA-QwenPI 上得到验证。它是否能稳定迁移到更多模型架构、单臂和移动操作平台，仍需要更多实验。</p>
+<h2>五、这篇论文真正推进了什么？</h2>
+<p>第一，它把 UMI 的竞争焦点从“采集是否便宜”转向“数据是否达到直接部署标准”。论文贡献横跨硬件、轨迹重建、数据质检和模型训练，属于系统工程创新，而不是单一网络结构创新。</p>
+<p>第二，它用 VLA 与世界动作模型共同测试同一个结论。三个骨干都实现与遥操作数据接近的平均表现，使结果不完全依赖某一种策略架构。</p>
+<p>第三，它展示了无机器人数据在大规模预训练中的潜力。相比后训练阶段几个百分点的胜负，18.1 个百分点的预训练增益更可能影响未来机器人数据基础设施的设计。</p>
+<p>对于触觉与接触丰富操作研究，这项工作也提供了一个重要参照：HiFi-UMI 当前主要依靠视觉、位姿和夹爪状态建立高保真动作数据，并没有把细粒度触觉作为核心模态。精密插入已经取得较高成功率，但更强接触不确定性、遮挡和力控任务是否仍能只靠这些信号解决，是下一步值得验证的边界。触觉数据如果能够进入同一套同步、重建和质检体系，可能进一步覆盖仅凭视觉与运动轨迹难以表达的接触状态。</p>
+<h2>六、需要谨慎看待的四个限制</h2>
+<p><strong>任务范围仍然有限。</strong> 核心结论来自四项桌面双臂任务、三个模型骨干和场景级分布偏移，尚不足以覆盖移动操作、柔性物体长程操作或高动态接触。</p>
+<p><strong>统计分辨率有限。</strong> 每个任务—策略组合只有 40 次测试，一次成功或失败就对应 2.5 个百分点。论文中的小幅差距更适合解释为“达到相当水平”，而不是证明某种数据源稳定优于另一种。</p>
+<p><strong>对照数据并非样本量匹配。</strong> 典型 UMI 后训练使用约 3200 条示教，而遥操作对照约为 300 条轨迹。因此实验支持的是“在可获得的数据规模下，UMI 能达到部署水平”，而不是“每条 UMI 数据的信息效率高于机器人数据”。</p>
+<p><strong>高保真因素没有被充分拆分。</strong> 3 mm 位姿精度、40 微秒同步、多视角覆盖、全掌夹爪和严格质检是作为整体系统验证的。缺少逐项消融，暂时无法判断其中哪些因素最关键，也不容易估算其他团队复现时可以删减哪些硬件和流程。</p>
+<h2>作者团队研究背景</h2>
+<p>从可核实的共同论文看，这支团队近期的研究并非只做 UMI 硬件，而是在围绕“可规模化人类数据如何进入真实机器人闭环”形成连续布局：</p>
+<ul>
+<li><strong>VLA 长程技能组合。</strong> Ke Rui、Yushen Zuo、Jiawei Wang、Haoran Jia、Jinming Ma、Weitao Zhou、Minglei Li 共同完成了 <a href="https://arxiv.org/abs/2607.06256">Diagnosing Semantic Handoff Failures in Agent-Orchestrated VLA Skill Composition</a>。该工作由 Simple AI 署名，研究单项 VLA 技能在长程组合时为何会因状态交接、目标定位和低层控制而失效，重点从“单技能成功率”转向真实闭环中的连续可执行性。</li>
+<li><strong>人类数据驱动的失败恢复。</strong> Weitao Zhou 和 Minglei Li 参与的 <a href="https://arxiv.org/abs/2607.19745">EgoRecovery</a> 由复旦大学可信具身智能研究院、上海市多模态具身智能重点实验室与 Simple AI 合作完成。它利用第一视角人类恢复示教覆盖机器人失败状态，并通过共享的纠正意图空间迁移到机器人；其数据采集效率在论文协议下超过机器人遥操作十倍。它与 HiFi-UMI 的共同点，是把昂贵、难覆盖的机器人示教环节迁移到更容易规模化的人类数据侧。</li>
+<li><strong>视触觉与柔性物体安全。</strong> Weitao Zhou、Jiawei Wang、Minglei Li 参与的 <a href="https://arxiv.org/abs/2607.04234">SoftVTBench</a> 联合多家高校与机构构建了柔性物体操作的安全感知视触觉基准。该论文中 Weitao Zhou 标注为清华大学与 Simple AI 双重单位，Jiawei Wang、Minglei Li 标注为 Simple AI；这只能说明他们在该项目中的单位信息，不能直接替代 HiFi-UMI 的作者单位。SoftVTBench 进一步说明这支团队也在关注视觉轨迹之外的接触安全、形变约束和触觉反馈。</li>
+</ul>
+<p>把这三项工作与 HiFi-UMI 放在一起，可以看到一条较完整的路线：数据端用人类示教扩大规模，策略端研究 VLA 的跨技能闭环和失败恢复，评测端再把触觉与物理安全纳入接触丰富操作。HiFi-UMI 是其中最偏数据基础设施的一环。</p>
+<h2>结语</h2>
+<p>HiFi-UMI 最有分量的结论不是“机器人数据已经不再需要”，而是：真实机器人示教可能不再是可部署操作策略的唯一入口。当无机器人数据的空间精度、时间同步、动作形态和质量控制同时达到足够水平时，它能够承担过去由机器人遥操作数据完成的后训练角色，并进一步成为多任务预训练的数据来源。</p>
+<p>这项工作把机器人学习的数据瓶颈重新表述为一个更具体的问题：未来真正稀缺的，也许不是机器人机时本身，而是能被可靠重建、验证并跨平台复用的高保真交互数据。</p>
+</article><div class="article-end"><a href="/">← 继续阅读其他文章</a><a class="source-link" href="https://github.com/mistephan/mistephan.github.io/blob/main/content/vision-tactile/hifi_umi_20260806/hifi_umi_data_alone_analysis.cloudinary.md" target="_blank" rel="noopener noreferrer">查看 Markdown 原稿 ↗</a></div></div></section></main><footer class="site-footer"><div class="wrap"><strong>范硕 / Fan Shuo</strong><span>触觉感知 · 具身智能 · 机器人学习</span></div></footer></body></html>

@@ -1,0 +1,177 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#152019"><meta name="description" content="一开始，答案看起来很自然：既然机器人模型已经从视觉语言模型走向 VLA，那么触觉是不是也可以像图像、语言、状态一样，作为多一路输入接进去？"><link rel="canonical" href="https://mistephan.github.io/articles/tactile_world_model_wechat/"><link rel="stylesheet" href="/assets/blog.css"><link rel="icon" type="image/png" href="/favicon.png"><title>触觉的基座模型从 VLA 到世界模型：深入理解一下 World Model | 范硕</title></head><body><header class="site-header"><div class="wrap"><a class="brand" href="/">范硕 <small>VISION × TOUCH NOTES</small></a><nav class="header-links" aria-label="主导航"><a href="/">研究文章</a><a class="work-link" href="/robotics/">工作介绍 ↗</a></nav></div></header><main><section class="article-hero"><div class="wrap"><a class="back-link" href="/">← 返回全部文章</a><div class="eyebrow">RESEARCH NOTES / 世界模型</div><h1>触觉的基座模型从 VLA 到世界模型：深入理解一下 World Model</h1><div class="meta"><time datetime="2026-07-02">2026-07-02</time><span>世界模型</span></div></div></section><section class="article-shell"><div class="article-layout"><article class="article-body"><p>最近我们一直在讨论一个问题：触觉应该怎样接入机器人基础模型？</p>
+<p>一开始，答案看起来很自然：既然机器人模型已经从视觉语言模型走向 VLA，那么触觉是不是也可以像图像、语言、状态一样，作为多一路输入接进去？</p>
+<p>但越看接触丰富任务，越会发现这个问题没那么简单。</p>
+<p>如果机器人只是“看见杯子，抓起杯子”，VLA 的 observe → act 范式已经很强。可一旦任务变成插入、擦拭、剥皮、拧紧、滑动、抓易碎物体，真正决定成败的就不只是“当前看见了什么”，而是“接下来接触会怎么变化”。</p>
+<p>物体会不会滑？接触法向对不对？局部是不是卡住了？力是不是越来越大？视觉上看起来合理的动作，未来会不会把接触状态推坏？</p>
+<p>这就是今天这篇想讲的主题：触觉的基座模型，为什么正在从 VLA 走向世界模型。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005492/haptic/tactile_world_model_wechat_20260702/vla_vs_world_model-6923b21208.png" alt="VLA 与 World Model 的核心区别"></p>
+<h2>先说结论：VLA 负责“现在怎么动”，世界模型负责“这样动会发生什么”</h2>
+<p>VLA，Vision-Language-Action model，最典型的结构是：输入图像、语言指令、机器人状态，然后输出动作。</p>
+<p>它的核心问题是：</p>
+<blockquote>
+<p>看到当前场景，听到当前指令，下一段动作应该是什么？</p>
+</blockquote>
+<p>世界模型，World Model，问的是另一个问题：</p>
+<blockquote>
+<p>如果我执行某个动作，世界接下来会变成什么样？</p>
+</blockquote>
+<p>这两个问题非常接近，但差别很大。</p>
+<p>VLA 更像一个强策略模型。它擅长把视觉语义、语言目标和动作示教对齐起来。π0、π0.5、OpenVLA、RT-2 这类模型，本质上都在努力把“看见/听懂”转成“能动”。</p>
+<p>世界模型则更像一个内部模拟器。它不只是输出动作，还要预测动作带来的未来状态。早期 World Models 和 Dreamer 系列强调在 learned dynamics 中 imagination / planning；近年的 World Action Model 则把视频生成、动作生成和未来状态预测耦合起来。</p>
+<p>对于触觉来说，这个差别特别关键。</p>
+<p>因为触觉最有价值的地方，往往不是告诉模型“现在接触到了什么”，而是提前暴露“接下来接触会不会坏掉”。</p>
+<h2>VLA 是怎么训练的？</h2>
+<p>以 π0 为例，它使用预训练视觉语言模型作为 backbone，再加上 action expert，用 flow matching 生成连续动作块。输入是图像、语言、机器人状态，输出是一段 action chunk。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005480/haptic/tactile_world_model_wechat_20260702/pi0_fig1_vla_overview-770832981e.png" alt="π0 的 VLA 总览"></p>
+<p>π0 的重点是把 VLM 扩展成 robot policy。它用大规模跨机器人数据训练，让模型能够在不同机械臂、不同任务之间共享能力。训练时，模型学习：</p>
+<p>图像 + 指令 + 状态 → 动作块</p>
+<p>π0.5 则进一步加强了开放世界泛化。它不只是用机器人动作数据，还加入网页视觉语言数据、高层子任务标注、非移动机器人数据、跨 embodiment 数据和 verbal instruction。推理时，它先预测 high-level subtask，再预测低层动作。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005479/haptic/tactile_world_model_wechat_20260702/pi05_fig3_hierarchical_vla-1fef5af6ef.png" alt="π0.5 的高低层 VLA 推理结构"></p>
+<p>这代表了 VLA 路线的一个重要升级：模型不再只是把“clean the bedroom”直接映射到动作，而是先预测“pick up the pillow”这样的子任务，再执行动作。</p>
+<p>但你会发现，不管是 π0 还是 π0.5，它们的主轴仍然是动作生成。即使 π0.5 有高层推理，它问的仍然是“下一步该做什么”。</p>
+<p>世界模型把问题改成了“下一步做了以后，世界会怎样”。</p>
+<h2>世界模型是怎么训练的？</h2>
+<p>经典意义上的 world model，可以形式化为一个状态转移模型：</p>
+<blockquote>
+<p>给定当前状态 s_t 和动作 a_t，预测未来状态 s_{t+1}</p>
+</blockquote>
+<p>在视频世界模型中，状态通常是图像、视频帧或 latent representation；在机器人世界模型中，状态还可以包括机器人 proprioception、动作轨迹、物体状态、力/触觉信号。</p>
+<p>训练数据也因此发生变化。</p>
+<p>VLA 主要需要示教数据：当前观测、语言指令、专家动作。</p>
+<p>世界模型需要状态转移数据：当前观测、动作、未来观测。对于触觉世界模型，还需要时间对齐的视觉、触觉、力/扭矩、机器人状态和动作序列。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005490/haptic/tactile_world_model_wechat_20260702/tactile_world_model_loop-0195c7e11e.png" alt="触觉世界模型的数据、训练和推理闭环"></p>
+<p>训练目标也不一样。</p>
+<p>VLA 通常学习 action loss：给定当前观测和指令，预测专家动作。</p>
+<p>世界模型则学习 prediction loss：预测未来视觉、未来触觉、未来力、未来状态，甚至把动作也放进同一个 denoising / flow matching 过程里联合建模。</p>
+<p>所以，世界模型不是简单地“比 VLA 多预测几帧图像”。它的关键是让模型学习动作和物理后果之间的因果关系。</p>
+<h2>推理框架：从 observe → act 到 observe → predict → act</h2>
+<p>VLA 推理通常是：</p>
+<p>观察当前图像和状态，输入语言指令，输出动作块。</p>
+<p>世界模型推理则更像：</p>
+<p>先观察当前状态，再想象短期未来，预测接触、视觉、力和状态如何变化，最后选择或修正动作。</p>
+<p>这就是 observe → predict → act。</p>
+<p>对于接触任务，这一步“predict”特别重要。</p>
+<p>比如抓一片薯片，视觉上看夹爪已经接近目标，但如果未来触觉预测显示局部压缩过大，动作就应该变轻。擦白板时，视觉上末端还在沿着表面移动，但如果未来触觉预测显示接触即将丢失，动作就应该调整法向压力。插 peg 时，视觉上孔位差不多对齐，但未来触觉预测如果显示剪切和卡阻上升，就应该先退一点或旋转修正。</p>
+<p>这类决策不是纯视觉语义问题，而是未来接触状态问题。</p>
+<h2>触觉为什么天然适合世界模型？</h2>
+<p>触觉有三个特点，让它很难只靠 VLA 输入层解决。</p>
+<p>第一，触觉是局部的。它只发生在接触面，信息密度很高，但空间范围很小。</p>
+<p>第二，触觉是事件驱动的。没有接触时几乎没信息，一旦接触发生，滑移、剪切、压缩、振动会快速变化。</p>
+<p>第三，触觉是强时间性的。当前触觉图像本身重要，但更重要的是触觉如何从上一帧演化到下一帧。</p>
+<p>这意味着，触觉不只是一个“模态”，而是一段接触动力学。</p>
+<p>如果把它直接当 token 拼到 VLA 输入里，模型可能学到“有触觉信号”和“没触觉信号”的区别，但不一定学会“这个触觉变化预示未来会滑”。</p>
+<p>而世界模型会强迫模型预测未来触觉。预测目标一旦存在，模型就必须学接触状态如何演化。</p>
+<h2>VTAM：把触觉放进预测式 Video-Tactile-Action Model</h2>
+<p>VTAM 的动机很直接：VLA 在视觉和语言语义上很强，但 contact-rich manipulation 中很多关键状态从 RGB 看不见。滑移、局部变形、细微力变化，都可能被视觉遮挡或弱化。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005493/haptic/tactile_world_model_wechat_20260702/vtam_fig1_overview-c9a1b44013.png" alt="VTAM 总览"></p>
+<p>VTAM 把触觉流放进 predictive video world model 中，联合建模未来视觉和未来触觉，并把这些预测式多模态表征注入 action diffusion head。</p>
+<p>它还引入 virtual force prediction objective，用 deformation-derived virtual force 作为辅助监督，避免训练时视觉梯度过强，把触觉分支压掉。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005495/haptic/tactile_world_model_wechat_20260702/vtam_fig2_architecture-fe30420e68.png" alt="VTAM 架构图"></p>
+<p>这篇论文最有启发的地方在于：它没有把触觉看成一个 downstream policy feature，而是把触觉作为世界动态的一部分来预测。</p>
+<p>也就是说，触觉不再只是“我现在摸到了什么”，而是“如果继续这样动，我接下来会摸到什么”。</p>
+<h2>Tactile-WAM：触觉进入世界模型，也要注意不要污染视频预测</h2>
+<p>Tactile-WAM 提出一个很细但很重要的问题：触觉应该进入 world action model，但不应该无约束进入所有 attention path。</p>
+<p>原因是触觉和视觉的统计性质不同。视觉是全局、连续、外观主导的；触觉是局部、稀疏、事件驱动的。如果直接让 tactile tokens 影响 video tokens，可能导致视频预测变差。论文把这称为 tactile pollution。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005487/haptic/tactile_world_model_wechat_20260702/tactile_wam_fig1_problem-27e5e930e1.png" alt="Tactile-WAM 问题定义"></p>
+<p>Tactile-WAM 的解法是 TAAM，也就是 Tactile Asymmetric Attention Mechanism。</p>
+<p>它包含两个关键设计。</p>
+<p>第一个是 VideoClean mask：阻止 video-query 访问 tactile key/value，保护视频预测路径。</p>
+<p>第二个是 touch-aware bias：当预测到触觉状态会变化时，让 action tokens 更关注相关 tactile anchors。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005488/haptic/tactile_world_model_wechat_20260702/tactile_wam_fig2_method-dd2c0f5bc6.png" alt="Tactile-WAM 方法框架"></p>
+<p>这个设计的意义是：触觉不是越早融合越好，也不是越强融合越好。世界模型里的触觉需要被路由到合适的位置：不要破坏视觉未来预测，但要在动作 denoising 时发挥作用。</p>
+<p>实验上，Tactile-WAM 在 ManiFeel 和真实机器人接触任务上都显示出明显优势，尤其是插入、装配、对齐这类依赖局部接触状态的任务。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005489/haptic/tactile_world_model_wechat_20260702/tactile_wam_fig3_results-a81c93fb8a.png" alt="Tactile-WAM 实验结果"></p>
+<h2>TacForeSight：力先变，触觉后变</h2>
+<p>TacForeSight 关注的是另一个触觉世界模型问题：force 和 tactile 的时间角色不同。</p>
+<p>在很多接触任务中，wrist force / torque 的变化会先于 fingertip tactile response。比如插入灯泡、锁紧物体、调整管件时，外部力矩变化可能先暴露整体接触趋势，随后局部触觉才出现更明显变化。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005485/haptic/tactile_world_model_wechat_20260702/tacforesight_fig1_concept-95c604ef07.png" alt="TacForeSight 概念图"></p>
+<p>TacForeSight 因此提出 TacForceWM：用高频 wrist wrench 条件预测未来 tactile latent。它不是生成完整视频，也不是重建高维 tactile image，而是在紧凑 latent space 里预测短期触觉演化。</p>
+<p>然后，Predictive Tactile-Conditioned Policy 会把 predicted tactile latent 当作 anticipatory contact prior，用于后续 flow-based action prediction。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005486/haptic/tactile_world_model_wechat_20260702/tacforesight_fig2_framework-df77e00fc6.png" alt="TacForeSight 框架图"></p>
+<p>这条路线很适合实时控制。它说明触觉世界模型不一定都要是大视频模型，也可以是轻量、短期、latent-space 的 contact foresight。</p>
+<h2>OmniVTA：从数据集到世界模型再到高频反射控制</h2>
+<p>OmniVTA 的路线更系统。它先指出触觉世界模型最大的瓶颈之一是数据：现有 visuo-tactile-action 数据集规模小、任务窄、时间同步不足。</p>
+<p>因此它提出 OmniViTac，一个大规模视觉-触觉-动作对齐数据集：21,879 条轨迹，86 个任务，100+ 物体，覆盖 wiping、peeling、cutting、grasping、assembly、in-hand adjustment 六类物理交互模式。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005476/haptic/tactile_world_model_wechat_20260702/omnivta_fig1_system-543c9aad6f.png" alt="OmniVTA 系统总览"></p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005477/haptic/tactile_world_model_wechat_20260702/omnivta_fig2_dataset-d2a1c64e99.png" alt="OmniViTac 数据集"></p>
+<p>方法上，OmniVTA 由四部分组成：自监督 tactile encoder、visuo-tactile world model、contact-aware fusion policy，以及 60Hz reflexive latent tactile controller。</p>
+<p>这里最值得注意的是最后一部分。它不是只预测未来触觉，然后把预测结果喂给低频策略，而是把预测触觉和真实触觉之间的偏差用于高频闭环修正。</p>
+<p>这很像人类操作时的感觉：你不是每次都重新规划整套动作，而是在接触变化时快速调整手指和手腕。</p>
+<h2>Qwen-RobotWorld：世界模型正在被基础模型化</h2>
+<p>如果跳出触觉，Qwen-RobotWorld 展示了 world model 的另一个趋势：把世界模型做成更大规模的 embodied foundation model。</p>
+<p>它把自然语言作为统一 action interface，让机器人操作、自动驾驶、室内导航、人到机器人迁移，都变成 language-conditioned video generation。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005481/haptic/tactile_world_model_wechat_20260702/qwen_robotworld_fig1_ewk_dataset-f984fdaa72.png" alt="Qwen-RobotWorld 的 EWK 数据集"></p>
+<p>它的 EWK 数据集包含约 8.6M embodied video-text pairs，覆盖 20+ embodiments 和 500+ action categories。模型结构上，Qwen-RobotWorld 使用 double-stream MMDiT：一条流处理语言动作语义，一条流处理视频 VAE latents，通过 joint attention 生成未来视频轨迹。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1783005483/haptic/tactile_world_model_wechat_20260702/qwen_robotworld_fig3_architecture-9fe0193728.png" alt="Qwen-RobotWorld 架构"></p>
+<p>Qwen-RobotWorld 不解决触觉问题，但它说明 world model 正在成为机器人基础模型的一条主线。</p>
+<p>它的局限也很清楚：语言和视频可以覆盖大量可见物理变化，但触觉、力觉、摩擦、局部压缩这些接触状态很难只靠视频充分表达。对于接触丰富操作，未来的 embodied world model 大概率需要把 tactile / force 作为真正的状态变量纳入训练。</p>
+<h2>一张表：VLA 和触觉世界模型到底差在哪</h2>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>VLA</th>
+<th>触觉世界模型</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>主要输入</td>
+<td>图像、语言、状态</td>
+<td>图像、触觉、力/扭矩、状态、动作历史</td>
+</tr>
+<tr>
+<td>主要输出</td>
+<td>动作 chunk</td>
+<td>未来视觉、未来触觉、未来力/状态、动作</td>
+</tr>
+<tr>
+<td>训练数据</td>
+<td>示教轨迹为主</td>
+<td>时间同步的状态转移序列</td>
+</tr>
+<tr>
+<td>训练目标</td>
+<td>模仿专家动作</td>
+<td>预测未来物理状态，并用预测约束动作</td>
+</tr>
+<tr>
+<td>推理方式</td>
+<td>observe → act</td>
+<td>observe → predict → act</td>
+</tr>
+<tr>
+<td>触觉角色</td>
+<td>当前观测或额外 token</td>
+<td>未来接触状态、预测目标、动作修正依据</td>
+</tr>
+<tr>
+<td>适合任务</td>
+<td>语义泛化、目标选择、常规操作</td>
+<td>插入、装配、擦拭、剥皮、抓易碎物体、滑移控制</td>
+</tr>
+</tbody></table>
+<h2>我的判断：触觉不是 VLA 的补丁，而是世界模型的物理状态</h2>
+<p>如果触觉只是作为 VLA 的一路输入，它很容易被视觉和语言语义淹没。</p>
+<p>这不是因为触觉不重要，而是因为训练目标没有逼模型理解触觉。只要动作 loss 可以通过视觉和语言降低，模型就可能学会忽略触觉。</p>
+<p>世界模型的关键改变，是把触觉变成必须预测的未来状态。模型不能只问“当前触觉有没有用”，而要问“未来触觉会怎样变化”。这会迫使它学习接触动力学。</p>
+<p>因此，未来触觉基座模型可能不会只是一个 tactile encoder，也不会只是 VLA 里的 tactile token，而会更像：</p>
+<p>一个能预测未来视觉、未来触觉、未来力、未来动作后果的物理模型。</p>
+<p>它既可以服务策略，也可以服务数据生成、失败预测、动作筛选、离线评估和闭环控制。</p>
+<h2>结语</h2>
+<p>VLA 让机器人开始理解语言和视觉世界。</p>
+<p>世界模型让机器人开始预测行动之后的物理世界。</p>
+<p>而触觉，让这个物理世界不再只是 RGB 里看起来合理的未来，而是包含接触、摩擦、滑移、变形和力变化的真实未来。</p>
+<p>所以，当我们说“触觉的基座模型从 VLA 到世界模型”，真正的意思不是放弃 VLA，而是在 VLA 之上补上一个更关键的能力：</p>
+<p>让机器人在行动前，先想象自己会摸到什么。</p>
+<p>这一步，可能正是触觉从“多一路输入”变成“物理智能核心”的开始。</p>
+<h2>参考资料</h2>
+<ul>
+<li>World Models: <a href="https://arxiv.org/abs/1803.10122">https://arxiv.org/abs/1803.10122</a></li>
+<li>DayDreamer: <a href="https://arxiv.org/abs/2206.14176">https://arxiv.org/abs/2206.14176</a></li>
+<li>DreamerV3: <a href="https://arxiv.org/abs/2301.04104">https://arxiv.org/abs/2301.04104</a></li>
+<li>World Action Models are Zero-shot Policies / DreamZero: <a href="https://arxiv.org/abs/2602.15922">https://arxiv.org/abs/2602.15922</a></li>
+<li>Qwen-RobotWorld: <a href="https://arxiv.org/abs/2606.17030">https://arxiv.org/abs/2606.17030</a></li>
+<li>Genie Envisioner: <a href="https://arxiv.org/abs/2508.05635">https://arxiv.org/abs/2508.05635</a></li>
+<li>Cosmos Policy: <a href="https://arxiv.org/abs/2601.16163">https://arxiv.org/abs/2601.16163</a></li>
+</ul>
+</article><div class="article-end"><a href="/">← 继续阅读其他文章</a><a class="source-link" href="https://github.com/mistephan/mistephan.github.io/blob/main/content/vision-tactile/tactile_world_model_wechat/%E8%A7%A6%E8%A7%89%E4%B8%96%E7%95%8C%E6%A8%A1%E5%9E%8B_%E5%85%AC%E4%BC%97%E5%8F%B7%E5%9B%BE%E6%96%87%E7%A8%BF.cloudinary.md" target="_blank" rel="noopener noreferrer">查看 Markdown 原稿 ↗</a></div></div></section></main><footer class="site-footer"><div class="wrap"><strong>范硕 / Fan Shuo</strong><span>触觉感知 · 具身智能 · 机器人学习</span></div></footer></body></html>

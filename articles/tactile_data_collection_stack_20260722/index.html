@@ -1,0 +1,127 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#152019"><meta name="description" content="如果只看过去两年的热点，机器人领域最亮眼的词几乎都围绕 VLA、世界模型、具身智能 展开。但只要进入真实接触场景，问题很快会变得具体起来：插接为什么总是差最后几毫米，抓住之后为什么还会滑，灵巧手为什么看起来很聪明但一碰到真实…"><link rel="canonical" href="https://mistephan.github.io/articles/tactile_data_collection_stack_20260722/"><link rel="stylesheet" href="/assets/blog.css"><link rel="icon" type="image/png" href="/favicon.png"><title>触觉机器人正在进入数采栈时代 | 范硕</title></head><body><header class="site-header"><div class="wrap"><a class="brand" href="/">范硕 <small>VISION × TOUCH NOTES</small></a><nav class="header-links" aria-label="主导航"><a href="/">研究文章</a><a class="work-link" href="/robotics/">工作介绍 ↗</a></nav></div></header><main><section class="article-hero"><div class="wrap"><a class="back-link" href="/">← 返回全部文章</a><div class="eyebrow">RESEARCH NOTES / 数据采集</div><h1>触觉机器人正在进入数采栈时代</h1><div class="meta"><time datetime="2026-07-22">2026-07-22</time><span>数据采集</span></div></div></section><section class="article-shell"><div class="article-layout"><article class="article-body"><p><strong>作者</strong>：Codex
+<strong>日期</strong>：2026-07-22</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1784731650/haptic/tactile_data_collection_stack_20260722_20260722/cover_tactile_data_collection_stack_20260722.png" alt="封面：触觉机器人进入数采栈时代"></p>
+<p>如果只看过去两年的热点，机器人领域最亮眼的词几乎都围绕 <code>VLA</code>、<code>世界模型</code>、<code>具身智能</code> 展开。但只要进入真实接触场景，问题很快会变得具体起来：插接为什么总是差最后几毫米，抓住之后为什么还会滑，灵巧手为什么看起来很聪明但一碰到真实物体就变笨？</p>
+<p>很多时候，问题并不在于模型规模还不够大，而在于触觉还没有真正进入机器人的训练主干。我们已经很习惯用更大的视觉模型、更多的互联网先验去解释机器人进展，但一旦任务进入插接、拧转、压合、贴合这些真实接触场景，决定成败的往往不再是“看见了什么”，而是“接触发生时，系统有没有得到正确的物理反馈，并把这种反馈变成可学习的信号”。</p>
+<p>也正因为如此，最近一批触觉相关工作最值得看的地方，不是又多做出了一块传感器，也不是单篇论文把某个指标往上推了几个点，而是它们开始共同补齐一条过去长期断裂的链路。沿着这条线看，触觉正在从一个附加模态，慢慢变成机器人训练栈里的基础设施。</p>
+<p>这条链路大致可以分成四层。最上游，是先把问题重新讲清楚：触觉不该再被当成视觉的边角料，而应该和视觉、语言、动作一起进入统一建模框架。再往下一层，是解决数据入口：怎么把人类演示、机器人执行和真实接触对齐，采到真正可部署的数据。接着，是把这套采集能力扩展成面向类人机器人和灵巧操作的多模态数据集，让模型不再只靠稀疏、单薄的接触样本学习。最后，才轮到策略层的问题：触觉监督究竟该接进 VLA 的哪一层，才能真正改变模型的内部表示，而不是只在输入端多拼几个 token。</p>
+<p>放在一起看，今天介绍的四篇论文覆盖的恰好就是这四层：从综述梳理，到采集接口，到数据集建设，再到 VLA 内部的触觉对齐方法。它们看起来分属不同方向，实际上却在共同回答同一个问题：如果机器人真的要学会处理接触，触觉该怎样从“传感器输出”一步步进入“训练信号”和“策略能力”。</p>
+<p>所以，与其把这组工作看成四条彼此分散的支线，不如把它们理解成一条正在成形的“触觉数采栈”。这也是今天触觉机器人最值得关注的变化之一。</p>
+<h2>一、第一篇综述给出的关键信号：触觉已经不再是附属模态</h2>
+<p><strong>论文</strong>：<em>Tactile-based Multimodal Fusion in Embodied Intelligence: A Survey of Vision, Language, and Contact-Driven Paradigms</em><br><strong>作者</strong>：Zhixiang Cao, Di Tian, Runwei Guan 等<br><strong>机构</strong>：西安交通大学、香港科技大学（广州）、南京大学、武汉大学、复旦大学等</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1784731652/haptic/tactile_data_collection_stack_20260722_20260722/paper1_survey_taxonomy.png" alt="综述中的多模态触觉分类框架"></p>
+<p>这篇综述最重要的价值，不是简单罗列论文，而是给出了一个很清楚的判断：<code>multimodal tactile fusion</code> 已经从零散的视觉+触觉工作，发展成一个可以独立成体系的研究方向。</p>
+<p>作者把整个领域拆成三根主轴：</p>
+<ul>
+<li><code>数据</code>：从 tactile-vision、tactile-language 到 tactile-vision-language，再到带 action、audio、proprioception 的 tactile-vision-other。</li>
+<li><code>方法</code>：从感知识别、跨模态生成，一直到多模态交互与操控。</li>
+<li><code>硬件</code>：从可穿戴触觉、指尖触觉，到机器人皮肤、夹爪集成触觉。</li>
+</ul>
+<p>这个框架其实非常重要。因为它在提醒我们，触觉问题不是单一算法问题，而是一个跨越 <code>硬件-数据-表示-控制</code> 的系统问题。只做某一层，很容易出现局部进展很快、整体落地很慢的局面。</p>
+<p>综述里还有两个值得注意的细节。</p>
+<p>第一，作者明确指出当前主要瓶颈不是“没有方法”，而是 <code>data fragmentation</code>、<code>modality misalignment</code>、<code>hardware-software integration barriers</code> 和 <code>benchmark inconsistency</code>。换句话说，现在触觉方向最缺的，不只是更大的模型，而是更统一的采集接口、更可迁移的数据表示，以及更可信的评价体系。</p>
+<p>第二，作者把未来方向概括为 <code>Unified Scalable Datasets</code>、<code>Hierarchical Fusion Architectures</code>、<code>End-to-End Embodied Systems</code> 等几个方向。这几乎可以被当成后面三篇论文的路线图：RealDexUMI 解决采集接口，RoboTacDex 解决类人数据集，Representation-Aligned Tactile Grounding 解决触觉进入 VLA 内部表示的方式。</p>
+<p>所以，综述不是背景板，而是一个很好的坐标轴。它告诉我们：今天讨论触觉，不该只问“有没有触觉传感器”，而该问“触觉有没有进入数据和策略的主干结构”。</p>
+<h2>二、RealDexUMI：真正的数采问题，不是采得多，而是采得能部署</h2>
+<p><strong>论文</strong>：<em>RealDexUMI: A Wearable Universal Manipulation Interface for Dexterous Robot Learning</em><br><strong>作者</strong>：Chaoyi Xu, Yixuan Jiang, Jiahui Huan 等<br><strong>机构</strong>：北京大学、BeingBeyond、北京航空航天大学、清华大学、灵初智能（LinkerBot）
+<img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1784731654/haptic/tactile_data_collection_stack_20260722_20260722/paper2_realdexumi_overview.png" alt="RealDexUMI 系统总览"></p>
+<p>RealDexUMI 这篇论文有一个很好的表述，叫 <code>deployable dexterity</code>。它的核心意思是，人类演示得再灵巧，如果最后不能直接变成机器人可执行的动作和接触，那这些数据对策略学习的价值就会被大量损耗。</p>
+<p>过去很多演示采集方案有两个典型问题：</p>
+<ul>
+<li>一类是人手动作采得很细，但最后需要再做 human-to-robot retargeting。动作映射一旦变形，接触就变形。</li>
+<li>另一类是机器人专用遥操作方案，部署一致性更好，但设备重、成本高、扩展慢，不适合大规模采数。</li>
+</ul>
+<p>RealDexUMI 的解法很干脆：不要让“采集端”和“部署端”用两套末端执行器，而是直接让它们共用同一套 dexterous end-effector module。这个模块里集成了轻量灵巧手、手内视觉和指尖触觉；操作员通过手掌侧的 isomorphic glove 直接控制这只手，尽量减少 retargeting。</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1784731655/haptic/tactile_data_collection_stack_20260722_20260722/RealDexUMI-%20hardware%20system%20overview.png" alt="RealDexUMI硬件系统"></p>
+<p>这带来三个直接收益：</p>
+<ul>
+<li><code>观察对齐</code>：采集时看到的 in-hand image，和部署时机器人看到的是同一种视角。</li>
+<li><code>接触对齐</code>：采集时发生接触的，就是未来部署时会接触物体的那组指尖表面。</li>
+<li><code>动作对齐</code>：记录下来的不是“人手状态”，而是机器人最终真的会执行的 hand commands。</li>
+</ul>
+<p>这篇论文最有说服力的地方在实验结果。作者报告：</p>
+<ul>
+<li>共采集超过 <code>100 小时</code> 演示数据；</li>
+<li>覆盖 <code>8</code> 类真实机器人任务；</li>
+<li>主实验中每个任务使用 <code>200</code> 条 demonstrations 训练；</li>
+<li>在 8 个真实接触任务上，平均成功率达到 <code>88.75%</code>；</li>
+<li>去掉触觉输入后，平均成功率下降到 <code>70.00%</code>；</li>
+<li>如果把“下一时刻手状态”当作动作标签，而不是用真实可执行 hand command，成功率进一步降到 <code>51.25%</code>。</li>
+</ul>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1784731656/haptic/tactile_data_collection_stack_20260722_20260722/paper2_realdexumi_results.png" alt="RealDexUMI 的结果页与消融实验"></p>
+<p>论文把一个常被忽略的问题说清楚了：<code>数采接口本身就是模型效果的一部分</code>。如果采集时动作、状态、接触和视觉没有对齐，再强的策略也只能在一个失真的训练分布里学习。</p>
+<p>从这个角度看，RealDexUMI 不是一篇普通“新设备”论文，它实际上是在补触觉机器人的数据入口。</p>
+<h2>三、RoboTacDex：当接口有了，下一步就是把类人机器人数据真正做厚</h2>
+<p><strong>论文</strong>：<em>RoboTacDex: A Dexterous Visual-Tactile-Action Dataset for Humanoid Manipulation</em><br><strong>作者</strong>：Xinyi Wang, Donghan Li, Zi’Ang Chen 等<br><strong>机构</strong>：复旦大学、字节跳动智能创作、上海 AI Lab、香港中文大学</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1784731658/haptic/tactile_data_collection_stack_20260722_20260722/paper3_robotacdex_overview.png" alt="RoboTacDex 数据采集系统总览"></p>
+<p>如果说 RealDexUMI 解决的是“怎么让数据采得对”，那 RoboTacDex 解决的是“怎么让类人机器人数据采得够厚、够完整、够适合训练”。</p>
+<p>这篇论文的目标非常明确：为上肢类人机器人灵巧操作建立一个带触觉的、多视角、多模态数据集，而不是只给一个单相机或者单任务的小规模 benchmark。</p>
+<p>论文给出的数据规模是：</p>
+<ul>
+<li><code>6000+</code> 条 demonstration trajectories；</li>
+<li>约 <code>25 小时</code> 录制时长；</li>
+<li><code>19</code> 个任务；</li>
+<li><code>23</code> 种技能；</li>
+<li>涉及 <code>22</code> 个物体；</li>
+<li>同时记录 multi-view RGB、depth、tactile 和语义标注。</li>
+</ul>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1784731660/haptic/tactile_data_collection_stack_20260722_20260722/paper3_robotacdex_dataset_compare.png" alt="RoboTacDex 与已有数据集对比"></p>
+<p>它和很多现有数据集相比，差异不在于绝对条数最大，而在于它更明确地补了几个缺口：</p>
+<p>第一，它面向的是 <code>humanoid + dexterous hand + tactile</code> 的组合。很多已有大数据集虽然规模更大，但往往没有真正的灵巧手触觉，或者触觉只占很小一部分。</p>
+<p>第二，它强调 <code>multi-view + depth + tactile</code> 的同步，而不是只给 RGB。对于接触密集操作，单视角视觉很容易被遮挡，多视角和深度能补几何，触觉则补接触状态。</p>
+<p>第三，它把数据集和 benchmark 连在一起，不只是“给你一堆轨迹”，而是实打实拿三类 imitation learning 方法去验证这个数据集能不能支撑策略学习。</p>
+<p>这篇论文背后的判断很值得重视：未来类人机器人如果真要走向通用操作，它所需要的数据不会只是“更多视频”，而会是 <code>更多带接触、带动作、带多视角几何的高质量轨迹</code>。RoboTacDex 的意义就在这里，它让“灵巧操作数据集”开始从小规模实验室资源，向更像基础设施的形态靠近。</p>
+<p>当然，这篇工作也暴露了当前阶段的边界。6000 条轨迹、25 小时，对学术界已经不小，但离真正支撑通用机器人基础模型还远远不够；而且它仍然主要聚焦上肢任务，不是完整全身交互。但这恰恰说明它的位置很重要：它不是终点，而是把“类人触觉数采”从概念变成工程对象的那一步。</p>
+<h2>四、Representation-Aligned Tactile Grounding：真正关键的是，触觉监督接到 VLA 的哪一层</h2>
+<p><strong>论文</strong>：<em>Representation-Aligned Tactile Grounding for Contact-Rich Robotic Manipulation</em><br><strong>作者</strong>：Ruilin Chen, Jingkai Jia, Tong Yang 等<br><strong>机构</strong>：复旦大学、联想 CTO、南洋理工大学、中国电信 TeleAI</p>
+<p><img loading="lazy" decoding="async" src="https://res.cloudinary.com/dkvhdqgbq/image/upload/v1784731661/haptic/tactile_data_collection_stack_20260722_20260722/paper4_ratg_motivation.png" alt="触觉对齐方法的动机图"></p>
+<p>前面两篇论文都在解决“数据从哪里来、怎么采得更好”的问题。但数据不是终点，最后还得回答一个真正影响模型设计的问题：<code>触觉到底该怎样进入 VLA？</code></p>
+<p>很多触觉增强 VLA 的思路，默认都是把触觉当成输入，多拼一些 tactile tokens、adapter 或 fusion 模块。Representation-Aligned Tactile Grounding 这篇论文则换了一个更锋利的问题：</p>
+<p>不是“要不要加触觉”，而是“未来触觉预测的监督，应该作用在 VLA 内部哪一层表示上”。</p>
+<p>作者先做了一步很关键的诊断：用 frozen linear probes 去检查未来触觉状态在不同内部表示上的可预测性。结果发现，最适合承接触觉监督的，不是 VLM 侧语义特征，也不是最后的动作状态，而是 <code>intermediate action-expert representation</code>。</p>
+<p>这个发现背后的逻辑很漂亮：</p>
+<ul>
+<li>纯 VLM 特征离接触控制太远，更像“看懂场景”而不是“理解动作会带来什么接触结果”；</li>
+<li>最终 action state 又太靠近电机输出，很多对未来接触有用的信息已经被压缩掉了；</li>
+<li>只有中间那层 action-conditioned representation，既已经带上动作语义，又还没有被压扁成最后的 motor decoding，因此最适合接受 future tactile prediction 的监督。</li>
+</ul>
+<p>基于这个诊断，作者设计了一个轻量的 <code>Latent Tactile Predictor (LTP)</code>，不用直接预测高维且噪声较大的 raw tactile signals，而是预测紧凑的 future tactile latent。这样做的意义在于，监督目标更偏向接触后果本身，而不是被具体传感器噪声牵着走。</p>
+<p>这篇论文的结果也很直接：</p>
+<ul>
+<li>在真实世界接触任务上，作者报告 representation-aligned tactile grounding 平均成功率达到 <code>74%</code>；</li>
+<li>相比把监督接在 VLM 侧，提升 <code>16</code> 个点；</li>
+<li>相比接在 final action state，提升 <code>12</code> 个点；</li>
+<li>也优于“多层一起监督”的做法。</li>
+</ul>
+<p>这说明一个经常被忽略的问题：触觉不是“加进去就行”，它必须在表示层面和动作后果真正对齐。否则，触觉可能只是又一份输入，而不是能改变策略内部结构的监督信号。</p>
+<p>从更长远的角度看，这篇论文的意义还在于，它把“触觉接入 VLA”的问题从工程拼装，推进到了表示诊断。未来如果我们真的要做可扩展的触觉基础模型，这种“先诊断哪一层该承接哪种物理监督”的方法论会越来越重要。</p>
+<h2>五、把四篇放在一起看：触觉机器人真正缺的，是一条从数采到策略的闭环</h2>
+<p>现在回头看这四篇论文，它们其实刚好对应了一条完整链路：</p>
+<ul>
+<li>综述论文在定义地图：触觉已经从单独模态升级成多模态具身系统的一部分。</li>
+<li>RealDexUMI 在解决入口：如何采到部署一致、接触一致、动作一致的 dexterous data。</li>
+<li>RoboTacDex 在扩充底座：如何把类人机器人多模态触觉数据做成能训练、能比较、能扩展的数据集。</li>
+<li>Representation-Aligned Tactile Grounding 在解决出口：如何把这些数据真正变成 VLA 内部可用的接触监督。</li>
+</ul>
+<p>这条链路意味着一个很重要的变化：触觉研究正在从“传感器驱动”转向“训练栈驱动”。</p>
+<p>过去很多工作把重点放在触觉器件本身，比如分辨率更高、材料更柔软、成本更低。这些当然重要，但如果没有后面的采集协议、数据组织、表示对齐和策略接口，触觉依然很难进入机器人主干能力。</p>
+<p>而这四篇论文共同展示的，是另一种更加系统性的路线：</p>
+<ul>
+<li>用更一致的接口采集可部署数据；</li>
+<li>用更完整的数据集支撑类人和灵巧操作；</li>
+<li>用更明确的监督位置把触觉送进 VLA；</li>
+<li>最后形成从传感、采集、训练到部署的一致闭环。</li>
+</ul>
+<p>这也是为什么把这组论文的主题定成“数采栈时代”。因为今天触觉方向最重要的问题，已经不再只是“能不能感到触觉”，而是“能不能把触觉稳定地转成训练信号、再转成策略能力”。</p>
+<h2>六、这条路线接下来最值得关注什么</h2>
+<p>如果沿着这四篇的逻辑继续往下推，我觉得接下来最值得关注的有三件事。</p>
+<p>第一，<code>触觉数据的规模化</code>。RealDexUMI 和 RoboTacDex 都在说明高质量数采的重要性，但距离真正的大规模基础模型训练，当前数据量还只是起点。下一步一定会出现更长时序、更高频、更跨平台的触觉数据集。</p>
+<p>第二，<code>跨传感器与跨平台统一表示</code>。现在很多成果仍然绑定特定硬件。未来如果触觉要像视觉一样进入通用模型，它需要更 sensor-agnostic 的表示空间。</p>
+<p>第三，<code>触觉监督在模型内部的分工</code>。Representation-Aligned Tactile Grounding 已经开了一个头：不同物理信号不该无脑塞进输入，而应该找到最合适的表示接口。这个思路以后很可能扩展到力、音频、关节电流、甚至全身皮肤信号。</p>
+<h2>结语</h2>
+<p>这四篇论文不仅仅是提出了一个新模块、一套新设备或者一个新数据集，更重要的是它们共同指向了一件事：</p>
+<p><code>触觉机器人正在从“会感知一点触觉”走向“围绕触觉重建训练栈”。</code></p>
+<p>当采集接口开始强调 deployment alignment，当数据集开始强调 tactile + depth + multi-view + semantics，当 VLA 开始认真讨论触觉监督该接在哪一层，我们就能看到这个方向正在慢慢成熟。</p>
+<p>对于接触丰富操作来说，这可能比再堆一个更大的视觉模型更关键。因为机器人最终不是只需要“看懂世界”，它还需要在接触发生的那一刻，真正知道自己做了什么、碰到了什么，以及下一步该怎么改。</p>
+<p>而这，正是触觉数采栈开始成形的意义。</p>
+</article><div class="article-end"><a href="/">← 继续阅读其他文章</a><a class="source-link" href="https://github.com/mistephan/mistephan.github.io/blob/main/content/vision-tactile/tactile_data_collection_stack_20260722/%E8%A7%A6%E8%A7%89%E6%9C%BA%E5%99%A8%E4%BA%BA%E6%AD%A3%E5%9C%A8%E8%BF%9B%E5%85%A5%E6%95%B0%E9%87%87%E6%A0%88%E6%97%B6%E4%BB%A3.cloudinary.md" target="_blank" rel="noopener noreferrer">查看 Markdown 原稿 ↗</a></div></div></section></main><footer class="site-footer"><div class="wrap"><strong>范硕 / Fan Shuo</strong><span>触觉感知 · 具身智能 · 机器人学习</span></div></footer></body></html>
