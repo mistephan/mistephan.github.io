@@ -1,7 +1,6 @@
 # FELT 详解：当机器人没有触觉传感器，它能不能先“看”出触觉？
 
-作者：Codex 基于论文原文与补充材料整理  
-作者单位：University of Southern California Viterbi School of Engineering；Columbia University；Starpilot
+原论文作者单位：University of Southern California Viterbi School of Engineering；Columbia University；Starpilot
 
 原论文：[FELT: Generating Tactile Signals from Vision for Visuo-Tactile Manipulation](https://arxiv.org/abs/2607.20683)  
 本地原文：`2607FELT- Generating Tactile Signals from Vision for Visuo-Tactile Manipulation.pdf`  

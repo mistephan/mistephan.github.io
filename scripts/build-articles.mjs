@@ -16,6 +16,7 @@ const metadata={
   'human_centric_tactile_pretraining':['2026-07-18','触觉表征'],
   'infinite_worlds':['2026-07-14','世界模型'],
   'pi05_wechat':['2026-07-01','策略模型'],
+  'physical_ai_three_layers_20261110':['2026-11-10','行业观察'],
   'tacimag_wechat':['2026-07-06','视触融合'],
   'tacross-human-touch-system':['2026-10-13','触觉表征'],
   'tactile_data_collection_stack_20260722':['2026-07-22','数据采集'],
@@ -29,11 +30,11 @@ const escapeXml=escapeHtml;
 const plain=value=>value.replace(/!\[[^\]]*\]\([^)]*\)/g,'').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').replace(/[*_`#>]/g,'').replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim();
 function summaryOf(markdown){
   const chunks=markdown.split(/\n\s*\n/).map(plain);
-  const body=chunks.find(chunk=>chunk.length>48&&!/^(论文|作者|期刊|来源|关键词|摘要)[：:]/.test(chunk)&&!chunk.startsWith('|'))||chunks.find(chunk=>chunk.length>30)||'';
+  const body=chunks.find(chunk=>chunk.length>48&&!/^(论文|作者|原论文|本地原文|发布时间|期刊|来源|关键词|摘要)[：:]/.test(chunk)&&!chunk.startsWith('|'))||chunks.find(chunk=>chunk.length>30)||'';
   return [...body].slice(0,112).join('')+(body.length>112?'…':'');
 }
 function shell(){return `<header class="site-header"><div class="wrap"><a class="brand" href="/">范硕 <small>VISION × TOUCH NOTES</small></a><nav class="header-links" aria-label="主导航"><a href="/">研究文章</a><a class="work-link" href="/robotics/">工作介绍 ↗</a></nav></div></header>`;}
-function footer(){return `<footer class="site-footer"><div class="wrap"><strong>范硕 / Fan Shuo</strong><span>触觉感知 · 具身智能 · 机器人学习</span></div></footer>`;}
+function footer(withEmail=false){return `<footer class="site-footer"><div class="wrap"><strong>范硕 / Fan Shuo</strong><span>触觉感知 · 具身智能 · 机器人学习</span>${withEmail?'<a href="mailto:ustbstephan@gmail.com">ustbstephan@gmail.com</a>':''}</div></footer>`;}
 function pageHead(title,description,canonical){return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#152019"><meta name="description" content="${escapeHtml(description)}"><link rel="canonical" href="${escapeHtml(canonical)}"><link rel="stylesheet" href="/assets/blog.css"><link rel="icon" type="image/png" href="/favicon.png"><title>${escapeHtml(title)}</title></head><body>`;}
 
 marked.setOptions({gfm:true,breaks:false});
@@ -66,7 +67,7 @@ posts.sort((a,b)=>b.date.localeCompare(a.date)||a.title.localeCompare(b.title,'z
 const categories=['全部',...new Set(posts.map(post=>post.category))];
 const cards=posts.map(post=>`<a class="card" href="${post.url}" data-category="${escapeHtml(post.category)}" data-search="${escapeHtml(`${post.title} ${post.summary} ${post.category}`.toLocaleLowerCase())}"><div class="card-image">${post.cover?`<img src="${escapeHtml(post.cover)}" alt="${escapeHtml(post.title)}" loading="lazy" decoding="async">`:''}</div><div class="card-content"><div class="card-meta">${post.date} · ${escapeHtml(post.category)}</div><h3>${escapeHtml(post.title)}</h3><p>${escapeHtml(post.summary)}</p><div class="card-bottom">阅读全文 ↗</div></div></a>`).join('');
 const filters=categories.map(category=>`<button class="filter${category==='全部'?' active':''}" type="button" data-category="${escapeHtml(category)}" aria-pressed="${category==='全部'}">${escapeHtml(category)}</button>`).join('');
-const homepage=`${pageHead('范硕｜触觉与具身智能研究笔记','触觉感知、具身机器人与机器人学习的论文解读和技术观察。','https://mistephan.github.io/')}${shell()}<main><section class="hero"><div class="wrap"><div class="eyebrow">VISION × TOUCH / RESEARCH NOTES</div><h1>理解触觉，<br><span>让机器人更会行动。</span></h1><p>这里收录触觉感知、具身智能与机器人学习方向的论文解读和技术观察。从传感器、数据采集到策略模型，记录值得继续追问的问题。</p><div class="hero-bottom"><strong>${posts.length.toString().padStart(2,'0')}</strong><small>篇研究文章</small><a href="/robotics/">查看我的机器人工作 ↗</a></div></div></section><section class="listing" id="articles"><div class="wrap"><div class="listing-head"><div><div class="eyebrow">ALL ARTICLES</div><h2>研究文章</h2></div><label class="search"><input id="article-search" type="search" placeholder="搜索标题或主题" aria-label="搜索文章"></label></div><div class="filters" role="group" aria-label="按主题筛选">${filters}</div><div class="count" id="result-count"></div><div class="cards" id="article-cards">${cards}</div><div class="empty" id="empty-state">没有找到匹配的文章，请试试其他关键词。</div></div></section></main>${footer()}<script defer src="/assets/blog.js"></script></body></html>`;
+const homepage=`${pageHead('范硕｜触觉与具身智能研究笔记','触觉感知、具身机器人与机器人学习的论文解读和技术观察。','https://mistephan.github.io/')}${shell()}<main><section class="hero"><div class="wrap"><div class="eyebrow">VISION × TOUCH / RESEARCH NOTES</div><h1>理解触觉，<br><span>让机器人更会行动。</span></h1><p>这里收录触觉感知、具身智能与机器人学习方向的论文解读和技术观察。从传感器、数据采集到策略模型，记录值得继续追问的问题。</p><div class="hero-bottom"><strong>${posts.length.toString().padStart(2,'0')}</strong><small>篇研究文章</small><a href="/robotics/">查看机器人工作 ↗</a></div></div></section><section class="listing" id="articles"><div class="wrap"><div class="listing-head"><div><div class="eyebrow">ALL ARTICLES</div><h2>研究文章</h2></div><label class="search"><input id="article-search" type="search" placeholder="搜索标题或主题" aria-label="搜索文章"></label></div><div class="filters" role="group" aria-label="按主题筛选">${filters}</div><div class="count" id="result-count"></div><div class="cards" id="article-cards">${cards}</div><div class="empty" id="empty-state">没有找到匹配的文章，请试试其他关键词。</div></div></section></main>${footer(true)}<script defer src="/assets/blog.js"></script></body></html>`;
 await writeFile(path.join(root,'index.html'),homepage);
 await mkdir(path.join(root,'archives'),{recursive:true});
 await writeFile(path.join(root,'archives','index.html'),'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/"><link rel="canonical" href="https://mistephan.github.io/"><title>研究文章</title></head><body><a href="/">返回研究文章</a></body></html>');
